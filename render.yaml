@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: kaspi-analytics
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kaspi-db
+          property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false   # set manually in Render dashboard
+    healthCheckPath: /health
+
+databases:
+  - name: kaspi-db
+    databaseName: kaspi_analytics
+    plan: free
