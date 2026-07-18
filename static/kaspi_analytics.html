@@ -531,6 +531,42 @@ tbody tr:hover td{background:rgba(255,255,255,.025)}
 const API = window.location.protocol === 'file:'
   ? 'http://localhost:8001/api/v1'
   : window.location.origin + '/api/v1';
+
+// ── ADMIN AUTH ───────────────────────────────────────────────────────────────
+let _adminToken = null;
+
+function isAdmin(){ return !!_adminToken; }
+
+function showAdminModal(onSuccess){
+  if(_adminToken){onSuccess();return;}
+  const m=document.createElement('div');
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center';
+  m.innerHTML=`
+    <div style="background:var(--bg2);border:1px solid var(--brd);border-radius:16px;padding:32px;width:340px;max-width:90vw">
+      <div style="font-size:18px;font-weight:700;margin-bottom:8px"><i class="ti ti-lock" style="margin-right:8px"></i>Вход для администратора</div>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:20px">Введите пароль чтобы загружать и удалять данные</p>
+      <input id="_adm_pw" type="password" class="inp" placeholder="Пароль" style="width:100%;margin-bottom:12px" autofocus>
+      <div id="_adm_err" style="color:#f85149;font-size:13px;margin-bottom:10px;display:none">Неверный пароль</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-p" style="flex:1" id="_adm_ok">Войти</button>
+        <button class="btn btn-g" onclick="this.closest('div[style*=fixed]').remove()">Отмена</button>
+      </div>
+    </div>`;
+  document.body.appendChild(m);
+  const inp=m.querySelector('#_adm_pw');
+  const err=m.querySelector('#_adm_err');
+  async function tryLogin(){
+    const pw=inp.value.trim();if(!pw)return;
+    try{
+      const r=await fetch(API+'/uploads/auth-check',{headers:{'x-admin-token':pw}});
+      if(r.ok){_adminToken=pw;m.remove();onSuccess();}
+      else{err.style.display='block';inp.value='';inp.focus();}
+    }catch{err.textContent='Ошибка соединения';err.style.display='block';}
+  }
+  m.querySelector('#_adm_ok').onclick=tryLogin;
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin();});
+  setTimeout(()=>inp.focus(),50);
+}
 const CH={};
 const PAL=['#60B8D4','#3FB950','#2F81F7','#D29922','#A371F7','#F85149','#79C0FF','#56D364','#FFA657','#FF7B72','#D2A8FF'];
 const DL={frz:'Морозильники',ref:'Холод. витрины'};
@@ -1120,8 +1156,12 @@ async function renderUpload(){
 
 async function delUp(id){
   if(!confirm('Удалить загрузку? Все данные из неё будут удалены.'))return;
+  showAdminModal(()=>_doDelete(id));
+}
+async function _doDelete(id){
   try{
-    const r=await fetch(API+'/uploads/'+id,{method:'DELETE'});
+    const r=await fetch(API+'/uploads/'+id,{method:'DELETE',headers:{'x-admin-token':_adminToken||''}});
+    if(r.status===403){_adminToken=null;toast('Неверный пароль','error');return;}
     if(!r.ok)throw new Error(await r.text());
     toast('Загрузка удалена','success');
     loadCounts();loadMonths();loadSubtypes();renderUpload();
@@ -1133,12 +1173,15 @@ function handleDrop(e){
   const f=e.dataTransfer.files[0];if(f)handleFile(f);
 }
 
-async function handleFile(file){
+function handleFile(file){
   if(!file)return;
   if(!file.name.match(/\.(xlsx|xls)$/i)){toast('Нужен .xlsx файл','error');return;}
+  showAdminModal(()=>_doUpload(file));
+}
+
+async function _doUpload(file){
   const dept=g('up-dept').value;
   const month=g('up-month').value.trim();
-  // month is now optional — auto-read from Excel "месяц" column if blank
   toast('Загружаю файл...','default');
   const form=new FormData();
   form.append('file',file);
@@ -1147,8 +1190,9 @@ async function handleFile(file){
   try{
     const ctrl=new AbortController();
     const tid=setTimeout(()=>ctrl.abort(),60000);
-    const r=await fetch(API+'/uploads/',{method:'POST',body:form,signal:ctrl.signal});
+    const r=await fetch(API+'/uploads/',{method:'POST',body:form,signal:ctrl.signal,headers:{'x-admin-token':_adminToken||''}});
     clearTimeout(tid);
+    if(r.status===403){_adminToken=null;toast('Неверный пароль','error');return;}
     if(!r.ok){const t=await r.text();throw new Error(t);}
     const data=await r.json();
     const monthsStr = (data.months||[]).join(', ') || month || '';

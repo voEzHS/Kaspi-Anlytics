@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 import openpyxl
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,16 @@ from app.core.database import get_db
 from app.models.models import DeptEnum, KaspiRow, Upload
 
 router = APIRouter(prefix="/api/v1/uploads", tags=["uploads"])
+
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+
+
+async def require_admin(x_admin_token: Optional[str] = Header(None)):
+    """Allow write operations only if correct admin token is provided."""
+    if not ADMIN_PASSWORD:
+        return  # No password set — open access (dev mode)
+    if x_admin_token != ADMIN_PASSWORD:
+        raise HTTPException(403, "Неверный пароль администратора")
 
 UPLOAD_DIR = "/app/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -307,12 +317,23 @@ async def preview_parse(file: UploadFile = File(...)):
     }
 
 
+@router.get("/auth-check", summary="Verify admin password")
+async def auth_check(x_admin_token: Optional[str] = Header(None)):
+    """Returns 200 if password is correct, 403 if not."""
+    if not ADMIN_PASSWORD:
+        return {"ok": True}
+    if x_admin_token != ADMIN_PASSWORD:
+        raise HTTPException(403, "Неверный пароль")
+    return {"ok": True}
+
+
 @router.post("/", summary="Upload Excel matrix")
 async def upload_file(
     file: UploadFile = File(...),
     department: str = Form(...),   # "freezers" | "refrigerated"
     month: Optional[str] = Form(None),   # override month for all rows
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin),
 ):
     if department not in DeptEnum.__members__:
         raise HTTPException(400, f"Unknown department: {department}")
@@ -404,7 +425,7 @@ async def list_uploads(
 
 
 @router.delete("/{upload_id}", summary="Delete upload and its rows")
-async def delete_upload(upload_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_upload(upload_id: int, db: AsyncSession = Depends(get_db), _: None = Depends(require_admin)):
     upload = await db.get(Upload, upload_id)
     if not upload:
         raise HTTPException(404, "Upload not found")
