@@ -866,11 +866,13 @@ async function renderOverview(){
     }
     g('cmp-b').innerHTML = posBannerHtml;
 
-    // KPI cards with trend arrows (from monthly data)
+    // KPI cards with trend arrows — only show when a specific month is selected
     const monthly = d.monthly||[];
     const lastM = monthly[monthly.length-1]||{};
     const prevM = monthly[monthly.length-2]||{};
     function trendArrow(cur, prev){
+      // Hide comparison when viewing "all months" — it's misleading (compares last 2 months)
+      if(!A.month) return '';
       if(!prev||prev===0) return '';
       const d = cur-prev; const p = (d/prev*100).toFixed(1);
       return d>0
@@ -1844,43 +1846,33 @@ async function renderTrends(){
       </div>
     </div>`;
 
-    // ── Heatmap (vetka × month) ───────────────────────────────────────────────
-    const topVetkas = Object.keys(byVetka).slice(0,12);
+    // ── Top segments table (lightweight) ─────────────────────────────────────
+    const topVetkas = Object.keys(byVetka).slice(0,10);
     let hmHtml = '';
     if(topVetkas.length>0){
-      const allRevs = topVetkas.flatMap(v=>byVetka[v].map(m=>m.revenue));
-      const maxRev  = Math.max(...allRevs)||1;
-
-      const hmRows = topVetkas.map(v=>{
+      const segRows = topVetkas.map(v=>{
         const series = byVetka[v];
-        const cells  = series.map(s=>{
-          const intensity = s.revenue/maxRev;
-          const alpha     = (0.08 + intensity*0.7).toFixed(2);
-          const shareColor = s.our_share_pct>=20?'var(--green)':s.our_share_pct>=8?'var(--yellow)':s.our_revenue>0?'var(--red)':'var(--muted)';
-          const tooltip = `${v} · ${s.month}: рынок ${fmtR(s.revenue)}, наши ${s.our_share_pct.toFixed(0)}%`;
-          return `<td style="padding:4px 6px;text-align:center" title="${tooltip}">
-            <div style="background:rgba(47,129,247,${alpha});border-radius:5px;padding:5px 4px">
-              <div style="font-size:10px;color:var(--text);font-weight:500">${fmtRshort(s.revenue)}</div>
-              <div style="font-size:10px;color:${shareColor}">${s.our_share_pct>0?s.our_share_pct.toFixed(0)+'%':'—'}</div>
-            </div>
-          </td>`;
-        }).join('');
-        return `<tr><td style="font-size:11px;font-weight:500;padding:4px 8px 4px 0;white-space:nowrap;color:var(--text)">${v}</td>${cells}</tr>`;
+        const firstS = series[0]||{};
+        const lastS  = series[series.length-1]||{};
+        const totalRev = series.reduce((s,x)=>s+x.revenue,0);
+        const shareDelta = (lastS.our_share_pct - firstS.our_share_pct).toFixed(1);
+        const dColor = parseFloat(shareDelta)>0?'var(--green)':parseFloat(shareDelta)<0?'var(--red)':'var(--muted)';
+        const lastShare = lastS.our_share_pct||0;
+        const shareColor = lastShare>=20?'var(--green)':lastShare>=8?'var(--yellow)':lastShare>0?'var(--red)':'var(--muted)';
+        return `<tr>
+          <td style="font-size:12px;font-weight:500">${v}</td>
+          <td>${fmtR(totalRev)}</td>
+          <td style="color:${shareColor};font-weight:600">${lastShare.toFixed(1)}%</td>
+          <td style="color:${dColor};font-weight:700">${parseFloat(shareDelta)>0?'+':''}${shareDelta}%</td>
+        </tr>`;
       }).join('');
-
       hmHtml = `<div class="sec" style="margin-bottom:16px">
-        <div class="sh"><span class="st">Тепловая карта — рынок и наша доля по сегментам</span>
-          <span style="font-size:11px;color:var(--muted)">верхнее = выручка рынка · нижнее = наша доля %</span></div>
-        <div class="sb2"><div class="tw" style="overflow-x:auto">
-          <table style="border-collapse:collapse;min-width:100%">
-            <thead><tr>
-              <th style="font-size:10px;color:var(--muted);font-weight:500;text-align:left;padding:4px 8px 4px 0">Сегмент</th>
-              ${months.map(m=>`<th style="font-size:10px;color:var(--muted);font-weight:500;text-align:center;padding:4px 6px">${m}</th>`).join('')}
-            </tr></thead>
-            <tbody>${hmRows}</tbody>
-          </table>
-        </div></div>
-      </div>`;
+        <div class="sh"><span class="st">Топ сегментов — наша доля</span>
+          <span style="font-size:11px;color:var(--muted)">последний месяц · изменение за период</span></div>
+        <div class="sb2"><div class="tw"><table>
+          <thead><tr><th style="text-align:left">Сегмент</th><th>Рынок</th><th>Наша доля</th><th>Изменение</th></tr></thead>
+          <tbody>${segRows}</tbody>
+        </table></div></div>`;
     }
 
     // ── Where we're LOSING share ──────────────────────────────────────────────
@@ -1938,74 +1930,56 @@ async function renderTrends(){
         </table></div></div>`;
     }
 
-    // ── Subtype trends ────────────────────────────────────────────────────────
+    // ── Subtype summary (lightweight) ────────────────────────────────────────
     let subTypeHtml = '';
     const subNames = Object.keys(bySub);
     if(subNames.length>0){
       const subRows2 = subNames.map(t=>{
         const series = bySub[t];
-        const firstS = series[0];
-        const lastS  = series[series.length-1];
-        const sDelta = firstS&&lastS ? (lastS.our_share_pct - firstS.our_share_pct).toFixed(1) : null;
+        const firstS = series[0]||{};
+        const lastS  = series[series.length-1]||{};
+        const sDelta = (lastS.our_share_pct - firstS.our_share_pct).toFixed(1);
         const totRev = series.reduce((s,x)=>s+x.revenue,0);
-        const cells  = series.map(s=>{
-          const shareColor = s.our_share_pct>=20?'var(--green)':s.our_share_pct>=10?'var(--yellow)':s.our_revenue>0?'var(--red)':'var(--muted)';
-          return `<td style="text-align:center;padding:4px 8px">
-            <div style="font-size:11px;color:var(--muted)">${fmtRshort(s.revenue)}</div>
-            <div style="font-size:11px;font-weight:600;color:${shareColor}">${s.our_share_pct>0?s.our_share_pct.toFixed(0)+'%':'—'}</div>
-          </td>`;
-        }).join('');
-        const deltaColor = sDelta!=null&&parseFloat(sDelta)>0?'var(--green)':sDelta!=null&&parseFloat(sDelta)<0?'var(--red)':'var(--muted)';
+        const lastShare = lastS.our_share_pct||0;
+        const shareColor = lastShare>=20?'var(--green)':lastShare>=10?'var(--yellow)':lastShare>0?'var(--red)':'var(--muted)';
+        const dColor = parseFloat(sDelta)>0?'var(--green)':parseFloat(sDelta)<0?'var(--red)':'var(--muted)';
         return `<tr>
-          <td style="font-size:12px;font-weight:500;padding:4px 8px 4px 0">${t}</td>
-          ${cells}
-          <td style="text-align:center;font-weight:700;color:${deltaColor}">${sDelta!=null?(parseFloat(sDelta)>0?'+':'')+sDelta+'%':'—'}</td>
-          <td style="font-size:11px;color:var(--muted)">${fmtR(totRev)}</td>
+          <td style="font-size:12px;font-weight:500">${t}</td>
+          <td>${fmtR(totRev)}</td>
+          <td style="color:${shareColor};font-weight:600">${lastShare.toFixed(1)}%</td>
+          <td style="color:${dColor};font-weight:700">${parseFloat(sDelta)>0?'+':''}${sDelta}%</td>
         </tr>`;
       }).join('');
       subTypeHtml = `<div class="sec" style="margin-bottom:16px">
-        <div class="sh"><span class="st">По типам товаров — доля и рынок помесячно</span>
-          <span style="font-size:11px;color:var(--muted)">верхнее = рынок · нижнее = наша доля</span></div>
-        <div class="sb2"><div class="tw" style="overflow-x:auto"><table style="min-width:100%">
-          <thead><tr>
-            <th style="text-align:left">Тип</th>
-            ${months.map(m=>`<th>${m}</th>`).join('')}
-            <th>Изм.</th><th>Рынок всего</th>
-          </tr></thead>
+        <div class="sh"><span class="st">По типам товаров</span>
+          <span style="font-size:11px;color:var(--muted)">наша доля последний месяц · изменение за период</span></div>
+        <div class="sb2"><div class="tw"><table>
+          <thead><tr><th style="text-align:left">Тип</th><th>Рынок</th><th>Наша доля</th><th>Изменение</th></tr></thead>
           <tbody>${subRows2}</tbody>
         </table></div></div>`;
     }
 
-    // ── Brand sparklines ──────────────────────────────────────────────────────
-    const topB = byBrand.slice(0,20);
-    const maxBRev = Math.max(...topB.map(b=>b.total))||1;
-    const brandRows = topB.map(b=>{
-      const maxM = Math.max(...b.months)||1;
-      const sparks = b.months.map(v=>{
-        const h = Math.round((v/maxM)*30)||2;
-        const color = b.is_ours ? dc() : '#30363D';
-        return `<span style="display:inline-block;width:8px;height:${h}px;background:${color};border-radius:1px;vertical-align:bottom;margin-right:1px"></span>`;
-      }).join('');
+    // ── Top brands (lightweight list) ────────────────────────────────────────
+    const topB = byBrand.slice(0,15);
+    const brandRows = topB.map((b,i)=>{
       const trendColor = b.trend_pct==null?'var(--muted)':b.trend_pct>0?'var(--green)':b.trend_pct<0?'var(--red)':'var(--muted)';
       const trendStr   = b.trend_pct!=null?(b.trend_pct>0?'+':'')+b.trend_pct+'%':'—';
-      return `<tr${b.is_ours?' class="or'+(A.dept==='ref'?' ref':'')+ '"':''}>
-        <td style="font-size:12px;font-weight:500">${b.brand}${b.is_ours?' <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(63,185,80,.12);color:var(--green)">наш</span>':''}</td>
+      const firstV = b.months[0]||0;
+      const lastV  = b.months[b.months.length-1]||0;
+      return `<tr${b.is_ours?' style="background:rgba(63,185,80,.04)"':''}>
+        <td style="font-size:12px;color:var(--muted);width:28px">#${i+1}</td>
+        <td style="font-size:12px;font-weight:500">${b.brand}${b.is_ours?` <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(63,185,80,.12);color:var(--green)">наш</span>`:''}</td>
         <td>${fmtR(b.total)}</td>
-        <td style="white-space:nowrap">${sparks}</td>
-        ${b.months.map(v=>`<td style="font-size:11px;color:var(--muted);text-align:right">${fmtRshort(v)}</td>`).join('')}
-        <td style="font-weight:700;color:${trendColor};white-space:nowrap">${trendStr}</td>
+        <td style="color:var(--muted);font-size:11px">${fmtRshort(firstV)} → ${fmtRshort(lastV)}</td>
+        <td style="font-weight:700;color:${trendColor}">${trendStr}</td>
       </tr>`;
     }).join('');
 
     const brandHtml = `<div class="sec" style="margin-bottom:16px">
-      <div class="sh"><span class="st">Бренды — динамика выручки по месяцам</span>
+      <div class="sh"><span class="st">Бренды — тренд выручки</span>
         <span style="font-size:11px;color:var(--muted)">первый → последний месяц</span></div>
-      <div class="sb2"><div class="tw" style="overflow-x:auto"><table style="min-width:100%">
-        <thead><tr>
-          <th style="text-align:left">Бренд</th><th>Итого</th><th>Тренд</th>
-          ${months.map(m=>`<th style="text-align:right">${m}</th>`).join('')}
-          <th>Изм.</th>
-        </tr></thead>
+      <div class="sb2"><div class="tw"><table>
+        <thead><tr><th></th><th style="text-align:left">Бренд</th><th>Итого</th><th>Динамика</th><th>Изм.</th></tr></thead>
         <tbody>${brandRows}</tbody>
       </table></div></div>`;
 
