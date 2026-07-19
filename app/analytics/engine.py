@@ -857,8 +857,16 @@ def calc_monthly_trends(rows: list[dict], our_brands: set[str]) -> dict:
     insights: list[dict] = []
     if monthly_overview:
         peak = max(monthly_overview, key=lambda x: x["revenue"])
-        insights.append({"type": "info", "text": f"Пик рынка — {peak['month']} ({peak['revenue']/1e6:.0f} млн ₸). "
-                         f"Апрельский пик типичен для сезона охлаждения."})
+        peak_idx = MONTH_ORDER.index(peak["month"]) if peak["month"] in MONTH_ORDER else -1
+        if peak_idx in (3, 4):   # Апрель, Май
+            peak_comment = "Пик типичен для сезона охлаждения."
+        elif peak_idx in (5, 6, 7):  # Июнь–Август
+            peak_comment = "Летний пик — высокий сезон продаж."
+        elif peak_idx in (10, 11, 0):  # Ноябрь–Январь
+            peak_comment = "Пик в период распродаж и новогоднего сезона."
+        else:
+            peak_comment = ""
+        insights.append({"type": "info", "text": f"Пик рынка — {peak['month']} ({peak['revenue']/1e6:.0f} млн ₸). {peak_comment}".strip()})
         first_o, last_o = monthly_overview[0], monthly_overview[-1]
         rev_growth = round(safe_div(last_o["revenue"] - first_o["revenue"], first_o["revenue"]) * 100, 1)
         our_growth = round(safe_div(last_o["our_revenue"] - first_o["our_revenue"], first_o["our_revenue"]) * 100, 1)

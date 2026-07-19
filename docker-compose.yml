@@ -20,7 +20,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "8001:8000"
+      - "8001:10000"
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/kaspi_analytics
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}

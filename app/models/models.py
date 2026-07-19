@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Text, JSON, ForeignKey, Index, Enum
@@ -24,9 +24,9 @@ class Upload(Base):
     row_count = Column(Integer, default=0)
     months = Column(JSON, default=list)       # ["Январь 2025", "Февраль 2025"]
     subtypes = Column(JSON, default=list)     # ["Ларь", "Бонета"] – unique Тип values
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    rows = relationship("KaspiRow", back_populates="upload", cascade="all, delete-orphan", lazy="dynamic")
+    rows = relationship("KaspiRow", back_populates="upload", cascade="all, delete-orphan", lazy="select")
 
 
 class KaspiRow(Base):
@@ -63,6 +63,7 @@ class KaspiRow(Base):
         Index("ix_kaspi_dept_month", "department", "month"),
         Index("ix_kaspi_dept_brand", "department", "brand"),
         Index("ix_kaspi_dept_tip", "department", "tip"),
+        Index("ix_kaspi_dept_tip_month", "department", "tip", "month"),
     )
 
 
@@ -73,4 +74,4 @@ class AppSettings(Base):
     id = Column(Integer, primary_key=True)
     key = Column(String(100), unique=True, nullable=False)
     value = Column(JSON, nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

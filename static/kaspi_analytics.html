@@ -542,7 +542,7 @@ function showAdminModal(onSuccess){
   const m=document.createElement('div');
   m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center';
   m.innerHTML=`
-    <div style="background:var(--bg2);border:1px solid var(--brd);border-radius:16px;padding:32px;width:340px;max-width:90vw">
+    <div style="background:var(--s2);border:1px solid var(--border);border-radius:16px;padding:32px;width:340px;max-width:90vw">
       <div style="font-size:18px;font-weight:700;margin-bottom:8px"><i class="ti ti-lock" style="margin-right:8px"></i>Вход для администратора</div>
       <p style="color:var(--muted);font-size:13px;margin-bottom:20px">Введите пароль чтобы загружать и удалять данные</p>
       <input id="_adm_pw" type="password" class="inp" placeholder="Пароль" style="width:100%;margin-bottom:12px" autofocus>
@@ -574,7 +574,7 @@ const DA={frz:'freezers',ref:'refrigerated'};
 const PTITLES={overview:'Обзор',priority:'Приоритеты',brands:'Бренды',vetka:'Ветки',products:'Товары',abc:'ABC',trends:'Тренды',tactics:'Тактика',upload:'Загрузка',settings:'Настройки'};
 
 const A={dept:'frz',month:'',sub:'',subs:[],pp:1,ps:50,ptotal:0};
-if(!window._brands) window._brands=new Set(['AOLIEGE','BACKERCRAFT','FRIGGIER','LEADBROS']);
+if(!window._brands) window._brands=new Set(['AOLIEGE','FRIGGIER','LEADBROS']);
 
 // ── HELPERS ──
 function dc(){return A.dept==='ref'?'#3FB950':'#60B8D4'}
@@ -652,8 +652,14 @@ function ss(pfx,state,errMsg){
 
 // ── API STATUS ──
 async function checkAPI(){
-  try{await fetch('http://localhost:8001/health');g('api-dot').className='dot-st ok';g('api-lbl').textContent='localhost:8001';}
-  catch{g('api-dot').className='dot-st err';g('api-lbl').textContent='не подключён';}
+  const base = API.replace('/api/v1','');
+  try{
+    const r=await fetch(base+'/health');
+    if(!r.ok) throw new Error('not ok');
+    const host = base.replace(/^https?:\/\//,'').replace(/\/$/,'');
+    g('api-dot').className='dot-st ok';
+    g('api-lbl').textContent=host||'подключён';
+  }catch{g('api-dot').className='dot-st err';g('api-lbl').textContent='не подключён';}
 }
 
 // ── NAV ──
@@ -661,14 +667,16 @@ function showPage(name){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   g('page-'+name).classList.add('active');
   document.querySelectorAll('.nb').forEach(b=>b.classList.toggle('active',b.dataset.p===name));
-  // Скрываем фильтры типов и отдела на странице Приоритетов
+  // Скрываем фильтры типов и отдела на специальных страницах
   const isPriority = name==='priority';
+  const hideTabs  = isPriority || name==='upload' || name==='settings';
+  const hideMonth = isPriority || name==='trends';
   const tb = g('type-bar');
-  if(tb) tb.style.display = isPriority ? 'none' : '';
+  if(tb) tb.style.display = hideTabs ? 'none' : '';
   const deptSec = document.querySelector('.dept-sec');
   if(deptSec) deptSec.style.display = isPriority ? 'none' : '';
   const monthSel = g('month-sel');
-  if(monthSel) monthSel.style.display = isPriority ? 'none' : '';
+  if(monthSel) monthSel.style.display = hideMonth ? 'none' : '';
   updatePageTitle(name);
   renderActive();
 }
@@ -679,7 +687,7 @@ function updatePageTitle(name){
 }
 
 function setDept(d){
-  A.dept=d;A.month='';A.sub='';
+  A.dept=d;A.month='';A.sub='';A.pp=1;
   g('month-sel').value='';
   // Reset priority state so filter/done don't bleed across dept switches
   window._prFilter = {dept:'all', cat:'all'};
@@ -736,7 +744,7 @@ function rebuildTypeTabs(){
 }
 function rebuildChips(){rebuildTypeTabs();}  // alias for legacy calls
 function setSub(t){
-  A.sub=t;
+  A.sub=t;A.pp=1;
   rebuildTypeTabs();
   updatePageTitle();
   renderActive();
@@ -752,7 +760,12 @@ async function loadCounts(){
 }
 
 // ── DISPATCH ──
+let _renderTimer=null;
 function renderActive(){
+  clearTimeout(_renderTimer);
+  _renderTimer=setTimeout(_doRenderActive,40);
+}
+function _doRenderActive(){
   const p=document.querySelector('.page.active')?.id?.replace('page-','');
   if(!p)return;
   if(p==='overview')renderOverview();
@@ -1049,9 +1062,10 @@ async function renderVetka(){
         </tr>`;
       }).join('')+'</tbody>';
 
-    // Review ROI summary if available
+    // Review ROI summary if available — remove stale banner before re-inserting
+    g('vt-ct').querySelectorAll('.vetka-roi-banner').forEach(el=>el.remove());
     if(intel?.review_roi_overall>0){
-      g('vt-ct').insertAdjacentHTML('beforeend',`<div class="alert-bar ok" style="margin-top:16px">
+      g('vt-ct').insertAdjacentHTML('beforeend',`<div class="alert-bar ok vetka-roi-banner" style="margin-top:16px">
         <i class="ti ti-cash"></i> Расчётный ROI отзывов: в среднем <strong>${fmtR(intel.review_roi_overall)}</strong> дополнительной выручки за 1 отзыв в сегменте (на основе регрессии данных рынка)
       </div>`);
     }
@@ -1199,7 +1213,7 @@ async function _doUpload(file){
     const data=await r.json();
     const monthsStr = (data.months||[]).join(', ') || month || '';
     toast(`✅ Загружено ${fmtN(data.row_count)} строк · ${monthsStr}`,'success');
-    g('fi').value='';
+    try{g('fi').value=null;}catch{g('fi').value='';}
     loadCounts();loadMonths();loadSubtypes();renderUpload();
   }catch(e){toast('Ошибка: '+e.message,'error');console.error(e);}
 }
@@ -1221,12 +1235,22 @@ function addBrand(){
   window._brands.add(v);inp.value='';renderBT();
 }
 async function saveBrands(){
+  const btn=document.querySelector('button[onclick="saveBrands()"]');
+  if(btn){btn.disabled=true;btn.innerHTML='<div class="spin" style="display:inline-block;margin-right:6px"></div>Сохранение...';}
   try{
-    await fetch(API+'/settings/',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({our_brands:[...window._brands]})});
+    const r=await fetch(API+'/settings/',{
+      method:'PUT',
+      headers:{'Content-Type':'application/json','x-admin-token':_adminToken||''},
+      body:JSON.stringify({our_brands:[...window._brands]})
+    });
+    if(r.status===403){_adminToken=null;toast('Нет прав — войдите как администратор','error');return;}
+    if(!r.ok) throw new Error(await r.text());
     toast('✅ Бренды сохранены — обновляю аналитику...','success');
-    // Refresh active page so "our" highlights rebuild
     setTimeout(()=>renderActive(),400);
-  }catch{toast('Ошибка сохранения','error');}
+  }catch(e){toast('Ошибка сохранения: '+e.message,'error');}
+  finally{
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-device-floppy"></i>Сохранить';}
+  }
 }
 
 // ── DRILL-DOWN MODAL ──
@@ -1832,28 +1856,37 @@ async function renderTrends(){
     <div class="g2" style="margin-bottom:16px">
       <div class="sec">
         <div class="sh"><span class="st">Динамика выручки по месяцам</span></div>
-        <div class="sb2"><canvas id="${chartId1}" height="160"></canvas>
-        <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
-          <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px"><span style="width:10px;height:4px;background:#30363D;border-radius:2px;display:inline-block"></span>Рынок</span>
-          <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px"><span style="width:10px;height:4px;background:${dc()};border-radius:2px;display:inline-block"></span>Наши</span>
-        </div></div>
+        <div class="sb2">
+          <div style="position:relative;height:200px"><canvas id="${chartId1}"></canvas></div>
+          <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
+            <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px"><span style="width:10px;height:4px;background:#30363D;border-radius:2px;display:inline-block"></span>Рынок</span>
+            <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px"><span style="width:10px;height:4px;background:${dc()};border-radius:2px;display:inline-block"></span>Наши</span>
+          </div>
+        </div>
       </div>
       <div class="sec">
         <div class="sh"><span class="st">Наша доля рынка % — по месяцам</span></div>
-        <div class="sb2"><canvas id="${chartId2}" height="160"></canvas>
-        <div style="font-size:11px;color:var(--muted);margin-top:6px">Если линия падает пока рынок растёт — теряем долю</div>
+        <div class="sb2">
+          <div style="position:relative;height:200px"><canvas id="${chartId2}"></canvas></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px">Если линия падает пока рынок растёт — теряем долю</div>
         </div>
       </div>
     </div>`;
 
-    // ── Top segments table (lightweight) ─────────────────────────────────────
-    const topVetkas = Object.keys(byVetka).slice(0,10);
+    // ── Top segments table (lightweight, skip 0% rows) ───────────────────────
+    const allVetkas = Object.keys(byVetka).slice(0,15);
     let hmHtml = '';
-    if(topVetkas.length>0){
-      const segRows = topVetkas.map(v=>{
+    if(allVetkas.length>0){
+      // Only show segments where we have presence
+      const presentVetkas = allVetkas.filter(v=>{
         const series = byVetka[v];
-        const firstS = series[0]||{};
-        const lastS  = series[series.length-1]||{};
+        return series.some(s=>s.our_revenue>0);
+      });
+      const segRows = presentVetkas.map(v=>{
+        const series = byVetka[v];
+        const withUs = series.filter(s=>s.our_revenue>0);
+        const firstS = withUs[0]||series[0]||{};
+        const lastS  = withUs[withUs.length-1]||series[series.length-1]||{};
         const totalRev = series.reduce((s,x)=>s+x.revenue,0);
         const shareDelta = (lastS.our_share_pct - firstS.our_share_pct).toFixed(1);
         const dColor = parseFloat(shareDelta)>0?'var(--green)':parseFloat(shareDelta)<0?'var(--red)':'var(--muted)';
@@ -1868,7 +1901,7 @@ async function renderTrends(){
       }).join('');
       hmHtml = `<div class="sec" style="margin-bottom:16px">
         <div class="sh"><span class="st">Топ сегментов — наша доля</span>
-          <span style="font-size:11px;color:var(--muted)">последний месяц · изменение за период</span></div>
+          <span style="font-size:11px;color:var(--muted)">последний месяц · изменение за период · только сегменты где мы присутствуем</span></div>
         <div class="sb2"><div class="tw"><table>
           <thead><tr><th style="text-align:left">Сегмент</th><th>Рынок</th><th>Наша доля</th><th>Изменение</th></tr></thead>
           <tbody>${segRows}</tbody>
@@ -1959,35 +1992,96 @@ async function renderTrends(){
         </table></div></div>`;
     }
 
-    // ── Top brands (lightweight list) ────────────────────────────────────────
-    const topB = byBrand.slice(0,15);
-    const brandRows = topB.map((b,i)=>{
+    // ── Competitor comparison chart ───────────────────────────────────────────
+    const ourBrandsData  = byBrand.filter(b=>b.is_ours);
+    const competitorData = byBrand.filter(b=>!b.is_ours).slice(0,4);
+
+    // Our brands: distinct colors (NOT green shades — need to be clearly different)
+    const OUR_COLORS  = ['#3FB950','#F0E040','#60B8D4']; // green, yellow, cyan
+    // Competitors: reds/oranges/purples, dashed lines
+    const COMP_COLORS = ['#F85149','#D29922','#A371F7','#8B949E'];
+
+    // Each OUR brand: thick solid line, big dots, "★ NAME" label
+    const ourDatasets = ourBrandsData.map((b,i)=>({
+      label: '★ '+b.brand,
+      data: b.months,
+      borderColor: OUR_COLORS[i%OUR_COLORS.length],
+      backgroundColor: OUR_COLORS[i%OUR_COLORS.length]+'25',
+      fill: false,
+      tension: .3,
+      borderWidth: 3,
+      pointRadius: 6,
+      pointHoverRadius: 8,
+    }));
+    // Competitors: thin dashed lines, small dots
+    const compDatasets = competitorData.map((b,ci)=>({
+      label: b.brand,
+      data: b.months,
+      borderColor: COMP_COLORS[ci]||'#8B949E',
+      backgroundColor: 'transparent',
+      fill: false,
+      tension: .3,
+      borderWidth: 1.5,
+      borderDash: [5,4],
+      pointRadius: 3,
+    }));
+
+    const chartId3 = 'ch-tr-comp';
+
+    const compChartHtml = `<div class="sec" style="margin-bottom:16px">
+      <div class="sh">
+        <span class="st"><i class="ti ti-sword" style="color:var(--red)"></i> Мы vs конкуренты — выручка по месяцам</span>
+        <span style="font-size:11px;color:var(--muted)">★ жирная линия — наши · пунктир — конкуренты</span>
+      </div>
+      <div class="sb2">
+        <div style="position:relative;height:280px"><canvas id="${chartId3}"></canvas></div>
+      </div>
+    </div>`;
+
+    // ── Brands: split our vs competitors ────────────────────────────────────
+    function brandRow(b, rank){
       const trendColor = b.trend_pct==null?'var(--muted)':b.trend_pct>0?'var(--green)':b.trend_pct<0?'var(--red)':'var(--muted)';
       const trendStr   = b.trend_pct!=null?(b.trend_pct>0?'+':'')+b.trend_pct+'%':'—';
       const firstV = b.months[0]||0;
       const lastV  = b.months[b.months.length-1]||0;
-      return `<tr${b.is_ours?' style="background:rgba(63,185,80,.04)"':''}>
-        <td style="font-size:12px;color:var(--muted);width:28px">#${i+1}</td>
-        <td style="font-size:12px;font-weight:500">${b.brand}${b.is_ours?` <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(63,185,80,.12);color:var(--green)">наш</span>`:''}</td>
+      return `<tr>
+        <td style="font-size:12px;color:var(--muted);width:28px">#${rank}</td>
+        <td style="font-size:12px;font-weight:500">${b.brand}</td>
         <td>${fmtR(b.total)}</td>
         <td style="color:var(--muted);font-size:11px">${fmtRshort(firstV)} → ${fmtRshort(lastV)}</td>
         <td style="font-weight:700;color:${trendColor}">${trendStr}</td>
       </tr>`;
-    }).join('');
+    }
 
-    const brandHtml = `<div class="sec" style="margin-bottom:16px">
-      <div class="sh"><span class="st">Бренды — тренд выручки</span>
-        <span style="font-size:11px;color:var(--muted)">первый → последний месяц</span></div>
-      <div class="sb2"><div class="tw"><table>
-        <thead><tr><th></th><th style="text-align:left">Бренд</th><th>Итого</th><th>Динамика</th><th>Изм.</th></tr></thead>
-        <tbody>${brandRows}</tbody>
-      </table></div></div>`;
+    const ourBrandRows = ourBrandsData.map((b,i)=>brandRow(b,i+1)).join('');
+    const topCompRows  = byBrand.filter(b=>!b.is_ours).slice(0,10).map((b,i)=>brandRow(b,i+1)).join('');
+
+    const brandHtml = `
+    <div class="g2" style="margin-bottom:16px">
+      <div class="sec">
+        <div class="sh"><span class="st" style="color:var(--green)"><i class="ti ti-star"></i> Наши бренды</span>
+          <span style="font-size:11px;color:var(--muted)">первый → последний месяц</span></div>
+        <div class="sb2"><div class="tw"><table>
+          <thead><tr><th></th><th style="text-align:left">Бренд</th><th>Итого</th><th>Динамика</th><th>Изм.</th></tr></thead>
+          <tbody>${ourBrandRows||'<tr><td colspan="5" style="color:var(--muted);text-align:center">Нет данных</td></tr>'}</tbody>
+        </table></div>
+      </div>
+      <div class="sec">
+        <div class="sh"><span class="st" style="color:var(--red)"><i class="ti ti-users"></i> Топ конкуренты</span>
+          <span style="font-size:11px;color:var(--muted)">первый → последний месяц</span></div>
+        <div class="sb2"><div class="tw"><table>
+          <thead><tr><th></th><th style="text-align:left">Бренд</th><th>Итого</th><th>Динамика</th><th>Изм.</th></tr></thead>
+          <tbody>${topCompRows}</tbody>
+        </table></div>
+      </div>
+    </div>`;
 
     // ── Assemble page ─────────────────────────────────────────────────────────
     const ct = g('tr-ct');
     ct.innerHTML = kpiHtml
       + (insightsHtml?`<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px">${insightsHtml}</div>`:'')
       + chartHtml
+      + compChartHtml
       + hmHtml
       + losingHtml
       + winningHtml
@@ -1996,15 +2090,56 @@ async function renderTrends(){
 
     // ── Draw charts ───────────────────────────────────────────────────────────
     const col = dc();
+    // Chart 1: Revenue — dual Y axis so our line doesn't get squashed
     mkLine(chartId1, months,
-      [{label:'Рынок',data:ov.map(m=>m.revenue),borderColor:'#30363D',backgroundColor:'rgba(48,54,61,.25)',fill:true,tension:.3},
-       {label:'Наши', data:ov.map(m=>m.our_revenue),borderColor:col,backgroundColor:col+'33',fill:true,tension:.3}],
-      {scales:{y:{ticks:{callback:v=>'₸'+fmtRshort(v)}}}}
+      [{label:'Рынок',data:ov.map(m=>m.revenue),borderColor:'#484F58',backgroundColor:'rgba(72,79,88,.2)',fill:true,tension:.3,yAxisID:'y'},
+       {label:'Наши', data:ov.map(m=>m.our_revenue),borderColor:col,backgroundColor:col+'33',fill:true,tension:.3,yAxisID:'y2',borderWidth:2.5}],
+      {maintainAspectRatio:false,
+       scales:{
+         y:{ticks:{callback:v=>'₸'+fmtRshort(v)},title:{display:true,text:'Рынок',color:'#484F58',font:{size:10}}},
+         y2:{position:'right',ticks:{callback:v=>'₸'+fmtRshort(v),color:col},title:{display:true,text:'Наши',color:col,font:{size:10}},grid:{drawOnChartArea:false}}
+       }}
     );
     mkLine(chartId2, months,
       [{label:'Доля %',data:ov.map(m=>m.our_share_pct),borderColor:col,backgroundColor:col+'22',fill:true,tension:.3,
         pointRadius:4,pointBackgroundColor:ov.map(m=>m.share_delta!=null&&m.share_delta<0?'var(--red)':col)}],
-      {scales:{y:{ticks:{callback:v=>v.toFixed(1)+'%'}}},plugins:{legend:{display:false}}}
+      {maintainAspectRatio:false,scales:{y:{ticks:{callback:v=>v.toFixed(1)+'%'}}},plugins:{legend:{display:false}}}
+    );
+    // Chart 3: Competitor comparison — each brand separately
+    mkLine(chartId3, months,
+      [...ourDatasets, ...compDatasets],
+      {maintainAspectRatio:false,
+       plugins:{
+         legend:{
+           display:true,
+           position:'top',
+           labels:{
+             color:'#E6EDF3',
+             font:{size:12},
+             padding:16,
+             usePointStyle:true,
+             pointStyleWidth:12,
+             filter:(item)=>true,
+             generateLabels:(chart)=>{
+               return chart.data.datasets.map((ds,i)=>{
+                 const isOurs = ds.label.startsWith('★');
+                 return {
+                   text: ds.label,
+                   strokeStyle: ds.borderColor,
+                   fillStyle: isOurs ? ds.borderColor : 'transparent',
+                   lineWidth: isOurs ? 3 : 1.5,
+                   lineDash: isOurs ? [] : [5,4],
+                   fontColor: isOurs ? ds.borderColor : '#8B949E',
+                   hidden: false,
+                   datasetIndex: i,
+                   pointStyle: isOurs ? 'circle' : 'line',
+                 };
+               });
+             }
+           }
+         }
+       },
+       scales:{y:{ticks:{callback:v=>'₸'+fmtRshort(v)}}}}
     );
 
   }catch(e){ss('tr','em',e.message);console.error(e);}

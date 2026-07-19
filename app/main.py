@@ -2,7 +2,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +11,7 @@ from sqlalchemy import select, distinct, func
 from app.core.database import init_db, AsyncSessionLocal
 from app.routers import analytics, uploads, settings
 from app.routers import ai_router
+from app.routers.uploads import require_admin
 from app.models.models import KaspiRow, AppSettings
 
 
@@ -61,9 +62,9 @@ async def health():
     return {"status": "ok", "service": "kaspi-analytics"}
 
 
-@app.get("/api/v1/debug")
+@app.get("/api/v1/debug", dependencies=[Depends(require_admin)])
 async def debug():
-    """Diagnostic: shows what brands are in DB vs what our_brands setting contains."""
+    """Diagnostic (admin-only): shows what brands are in DB vs what our_brands setting contains."""
     async with AsyncSessionLocal() as db:
         # 1. What brands exist in kaspi_rows (freezers)
         q = select(KaspiRow.brand, func.count(KaspiRow.id).label("rows")).group_by(KaspiRow.brand).order_by(func.count(KaspiRow.id).desc()).limit(30)
@@ -82,7 +83,7 @@ async def debug():
         dept_counts = {str(r[0]): r[1] for r in res3.all()}
 
         # 4. Cross-check
-        defaults = ["AOLIEGE", "BACKERCRAFT", "FRIGGIER", "LEADBROS"]
+        defaults = ["AOLIEGE", "FRIGGIER", "LEADBROS"]
         active_brands = set(b.strip().upper() for b in (our_brands_in_db or defaults))
         brands_found = [b["brand"] for b in brands_in_db if b["brand"] and b["brand"].upper() in active_brands]
         brands_missing = [b for b in active_brands if b not in {x["brand"].upper() for x in brands_in_db if x["brand"]}]

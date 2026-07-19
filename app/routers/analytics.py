@@ -11,13 +11,28 @@ from app.analytics import engine
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 
+# Canonical month order for chronological sorting
+MONTH_ORDER = [
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+]
+
+
+def _month_sort_key(m: str) -> tuple:
+    """Sort months chronologically: year first, then month index within year."""
+    parts = m.split()
+    month_name = parts[0] if parts else m
+    year = int(parts[1]) if len(parts) > 1 else 0
+    idx = MONTH_ORDER.index(month_name) if month_name in MONTH_ORDER else 99
+    return (year, idx)
+
 
 async def _get_our_brands(db: AsyncSession) -> set[str]:
     row = await db.execute(select(AppSettings).where(AppSettings.key == "our_brands"))
     setting = row.scalar_one_or_none()
     if setting and setting.value:
         return {b.strip().upper() for b in setting.value}
-    return {"AOLIEGE", "BACKERCRAFT", "FRIGGIER", "LEADBROS"}
+    return {"AOLIEGE", "FRIGGIER", "LEADBROS"}
 
 
 async def _fetch_rows(
@@ -251,7 +266,7 @@ async def get_months(
         KaspiRow.month != "",
     ).order_by(KaspiRow.month)
     result = await db.execute(q)
-    months = sorted(r[0] for r in result.all())
+    months = sorted((r[0] for r in result.all()), key=_month_sort_key)
     return {"months": months}
 
 

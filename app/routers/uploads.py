@@ -1,7 +1,8 @@
 """Excel upload & parsing router."""
+import glob
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import openpyxl
@@ -339,7 +340,7 @@ async def upload_file(
         raise HTTPException(400, f"Unknown department: {department}")
 
     # Save file
-    safe_name = f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
+    safe_name = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{file.filename}"
     filepath = os.path.join(UPLOAD_DIR, safe_name)
     content = await file.read()
     with open(filepath, "wb") as f:
@@ -429,6 +430,15 @@ async def delete_upload(upload_id: int, db: AsyncSession = Depends(get_db), _: N
     upload = await db.get(Upload, upload_id)
     if not upload:
         raise HTTPException(404, "Upload not found")
+
+    # Delete the file from disk (uploaded files are named *_{original_filename})
+    if upload.filename:
+        for f in glob.glob(os.path.join(UPLOAD_DIR, f"*_{upload.filename}")):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+
     await db.delete(upload)
     await db.commit()
     return {"deleted": upload_id}
