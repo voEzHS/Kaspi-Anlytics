@@ -1,4 +1,5 @@
 """AI report generation via Anthropic Claude API."""
+import asyncio
 import os
 from typing import Optional
 
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.models.models import AppSettings, DeptEnum, KaspiRow
 from app.analytics import engine
+from app.routers.uploads import require_admin
 from sqlalchemy import select
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
@@ -19,12 +21,15 @@ DEPT_LABELS = {
 }
 
 
+_MANDATORY_BRANDS: set[str] = {"AOLIEGE", "FRIGGIER", "LEADBROS", "XINGX", "MUXXED"}
+
+
 async def _get_our_brands(db: AsyncSession) -> set[str]:
     row = await db.execute(select(AppSettings).where(AppSettings.key == "our_brands"))
     setting = row.scalar_one_or_none()
     if setting and setting.value:
-        return {b.strip().upper() for b in setting.value}
-    return {"VIATTO", "OLEFINI"}
+        return {b.strip().upper() for b in setting.value} | _MANDATORY_BRANDS
+    return _MANDATORY_BRANDS
 
 
 @router.post("/report")
@@ -33,6 +38,7 @@ async def generate_report(
     month: Optional[str] = Query(None),
     subtype: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin),
 ):
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
@@ -51,12 +57,14 @@ async def generate_report(
         raise HTTPException(404, "No data found for selected filters")
 
     our_brands = await _get_our_brands(db)
-    row_dicts = [
+    row_dicts = engine.apply_business_rules([
         {"brand": r.brand, "tip": r.tip, "vetka": r.vetka, "revenue": r.revenue or 0,
          "units": r.units or 0, "abc": r.abc, "rating": r.rating or 0,
-         "reviews": r.reviews or 0, "sellers": r.sellers or 0, "month": r.month}
+         "reviews": r.reviews or 0, "sellers": r.sellers or 0, "month": r.month,
+         "kod": r.kod or "", "name": r.name or "", "rrc": r.rrc or 0,
+         "sellers": r.sellers or 0, "volume": r.volume}
         for r in rows
-    ]
+    ])
 
     overview = engine.calc_overview(row_dicts, our_brands)
     brands = engine.calc_brands(row_dicts, our_brands)[:15]
@@ -98,8 +106,10 @@ async def generate_report(
 
 Будь конкретным, используй цифры. Пиши на русском языке."""
 
+    # Use asyncio.to_thread so the blocking I/O doesn't stall the event loop
     client = anthropic.Anthropic(api_key=api_key)
-    message = client.messages.create(
+    message = await asyncio.to_thread(
+        client.messages.create,
         model="claude-opus-4-8",
         max_tokens=1500,
         messages=[{"role": "user", "content": prompt}],

@@ -27,12 +27,15 @@ def _month_sort_key(m: str) -> tuple:
     return (year, idx)
 
 
+_MANDATORY_BRANDS: set[str] = {"AOLIEGE", "FRIGGIER", "LEADBROS", "XINGX", "MUXXED"}
+
+
 async def _get_our_brands(db: AsyncSession) -> set[str]:
     row = await db.execute(select(AppSettings).where(AppSettings.key == "our_brands"))
     setting = row.scalar_one_or_none()
     if setting and setting.value:
-        return {b.strip().upper() for b in setting.value}
-    return {"AOLIEGE", "FRIGGIER", "LEADBROS"}
+        return {b.strip().upper() for b in setting.value} | _MANDATORY_BRANDS
+    return _MANDATORY_BRANDS
 
 
 def _validate_department(department: str) -> "DeptEnum":
@@ -56,7 +59,7 @@ async def _fetch_rows(
         q = q.where(KaspiRow.tip == subtype)
     result = await db.execute(q)
     rows = result.scalars().all()
-    return [
+    raw = [
         {
             "kod": r.kod, "tip": r.tip, "name": r.name, "brand": r.brand,
             "volume": r.volume, "vetka": r.vetka, "month": r.month,
@@ -66,6 +69,7 @@ async def _fetch_rows(
         }
         for r in rows
     ]
+    return engine.apply_business_rules(raw)
 
 
 @router.get("/overview")

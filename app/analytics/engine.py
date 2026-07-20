@@ -41,6 +41,42 @@ def safe_div(a: float, b: float, default: float = 0.0) -> float:
     return a / b if b else default
 
 
+# ── Business rules ────────────────────────────────────────────────────────────
+
+def _vetka_lower_bound(vetka: str) -> int:
+    """Extract lower litre bound from vetka string.
+    '400-500' → 400,  '2500' → 2500,  'до 100' → 0
+    """
+    if not vetka:
+        return 0
+    s = vetka.strip().replace('–', '-').replace(' ', '')
+    # take first numeric token
+    import re as _re
+    m = _re.search(r'\d+', s)
+    return int(m.group()) if m else 0
+
+
+def apply_business_rules(rows: list[dict]) -> list[dict]:
+    """
+    Global business rules applied before any analytics calculation.
+
+    Rule 1 — Ларь minimum volume:
+        For chest-freezer ("Ларь") products, only include rows whose
+        vetka (liter range) starts at 400 L or above.
+        Rationale: sub-400 L chest freezers are a different product class
+        and distort category analytics.
+    """
+    result = []
+    for r in rows:
+        tip = (r.get("tip") or "").strip()
+        if tip.lower() == "ларь":
+            lb = _vetka_lower_bound(r.get("vetka") or "")
+            if lb < 400:
+                continue
+        result.append(r)
+    return result
+
+
 def sku_key(r: dict) -> str:
     """
     Unique identifier for a product (SKU).
