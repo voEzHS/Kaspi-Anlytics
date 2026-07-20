@@ -1,4 +1,40 @@
 """Analytics calculation engine — pure Python, no DB queries here."""
+import math
+import re
+from collections import defaultdict
+
+# Canonical month order for chronological sorting
+MONTH_ORDER = [
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+]
+
+# Aliases: any form → canonical index (0-based)
+_MONTH_IDX: dict[str, int] = {}
+for _i, _full in enumerate(MONTH_ORDER):
+    _MONTH_IDX[_full.lower()] = _i          # "январь" → 0
+    _MONTH_IDX[_full[:3].lower()] = _i       # "янв" → 0 (first 3 chars)
+# manual overrides for ambiguous 3-char prefixes
+_MONTH_IDX.update({
+    "янв": 0, "фев": 1, "мар": 2, "апр": 3, "май": 4,
+    "июн": 5, "июл": 6, "авг": 7, "сен": 8, "окт": 9, "ноя": 10, "дек": 11,
+    "март": 2,  # "март" is 4 chars but common abbreviation
+})
+
+
+def _month_sort_key(m: str) -> tuple:
+    """Sort month strings chronologically, handles any abbreviation or case."""
+    parts = m.strip().split()
+    month_raw = parts[0] if parts else m
+    year = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    key = month_raw.lower()
+    idx = _MONTH_IDX.get(key, _MONTH_IDX.get(key[:3], 99))
+    return (year, idx)
+
+
+def _month_name(m: str) -> str:
+    """Extract just the month word from 'Январь 2025' → 'Январь'."""
+    return m.split()[0] if m else m
 
 
 def safe_div(a: float, b: float, default: float = 0.0) -> float:
@@ -170,6 +206,10 @@ def calc_vetka(rows: list[dict], our_brands: set[str]) -> list[dict]:
     total_rev = sum(r["revenue"] for r in rows) or 1
     vmap: dict[str, dict] = {}
 
+    # Per-vetka brand revenue totals for correct leader calculation
+    brand_rev_by_vetka: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    brand_top_sku: dict[str, dict[str, dict]] = defaultdict(dict)  # vetka → brand → top sku row
+
     for r in rows:
         k = r["vetka"] or "—"
         if k not in vmap:
@@ -177,8 +217,6 @@ def calc_vetka(rows: list[dict], our_brands: set[str]) -> list[dict]:
                 "vetka": k, "revenue": 0.0, "units": 0.0,
                 "sku_keys": set(), "brands": set(), "rrcs": [], "our_rev": 0.0,
                 "our_sku_keys": set(),
-                # track leader: brand+sku with highest revenue
-                "_leader_rev": 0.0, "_leader_brand": "", "_leader_kod": "", "_leader_name": "",
             }
         v = vmap[k]
         v["revenue"] += r["revenue"] or 0
@@ -190,18 +228,26 @@ def calc_vetka(rows: list[dict], our_brands: set[str]) -> list[dict]:
         if r["brand"].upper() in our_brands:
             v["our_rev"] += r["revenue"] or 0
             v["our_sku_keys"].add(sku_key(r))
-        # Track the single highest-revenue SKU (any brand) for direct Kaspi link
+        # Track brand revenue totals and top SKU per brand per vetka
+        b = r["brand"] or ""
+        brand_rev_by_vetka[k][b] += r["revenue"] or 0
         row_rev = r["revenue"] or 0
-        if row_rev > v["_leader_rev"]:
-            v["_leader_rev"] = row_rev
-            v["_leader_brand"] = r["brand"] or ""
-            v["_leader_kod"] = r["kod"] or ""
-            v["_leader_name"] = r["name"] or ""
+        if b not in brand_top_sku[k] or row_rev > (brand_top_sku[k][b].get("revenue") or 0):
+            brand_top_sku[k][b] = r
 
     result = []
     for v in vmap.values():
+        k = v["vetka"]
+        # Leader = competitor brand with highest TOTAL revenue in this vetka
+        comp_brands = [(b, rev) for b, rev in brand_rev_by_vetka[k].items()
+                       if b.upper() not in our_brands]
+        if comp_brands:
+            leader_b, _ = max(comp_brands, key=lambda x: x[1])
+            leader_row = brand_top_sku[k].get(leader_b, {})
+        else:
+            leader_b, leader_row = "", {}
         result.append({
-            "vetka": v["vetka"],
+            "vetka": k,
             "revenue": round(v["revenue"], 2),
             "units": round(v["units"]),
             "skus": len(v["sku_keys"]),
@@ -211,9 +257,9 @@ def calc_vetka(rows: list[dict], our_brands: set[str]) -> list[dict]:
             "market_share_pct": round(safe_div(v["revenue"], total_rev) * 100, 2),
             "our_revenue": round(v["our_rev"], 2),
             "our_share_pct": round(safe_div(v["our_rev"], v["revenue"]) * 100, 2),
-            "leader_brand": v["_leader_brand"],
-            "leader_kod": v["_leader_kod"],
-            "leader_name": v["_leader_name"],
+            "leader_brand": leader_b,
+            "leader_kod": leader_row.get("kod") or "",
+            "leader_name": leader_row.get("name") or "",
         })
 
     return sorted(result, key=lambda x: x["revenue"], reverse=True)
@@ -261,7 +307,6 @@ def calc_subtype_compare(rows: list[dict], our_brands: set[str]) -> list[dict]:
 
 def _vetka_sort_key(v: str) -> tuple:
     """Sort vetka strings like '100-200', '500-600', 'до 100' numerically."""
-    import re
     nums = re.findall(r"\d+", str(v))
     return (int(nums[0]),) if nums else (9999,)
 
@@ -280,7 +325,7 @@ def calc_monthly(rows: list[dict], our_brands: set[str]) -> list[dict]:
             months[m]["our_revenue"] += r["revenue"] or 0
             months[m]["our_sku_keys"].add(sku_key(r))
 
-    result = sorted(months.values(), key=lambda x: x["month"])
+    result = sorted(months.values(), key=lambda x: _month_sort_key(x["month"]))
     out = []
     for m in result:
         total = m["revenue"] or 1
@@ -302,9 +347,6 @@ def calc_intelligence(rows: list[dict], our_brands: set[str]) -> dict:
     market position · review ROI · segment penetrability · time-to-leadership
     SKU momentum · cannibalization · competitive threats · Kaspi rank score · seasonal forecast
     """
-    import math
-    from collections import defaultdict
-
     if not rows:
         return {}
 
@@ -670,18 +712,12 @@ def calc_monthly_trends(rows: list[dict], our_brands: set[str]) -> dict:
     - Segments where we're losing / gaining share
     - Auto-generated trend insights
     """
-    from collections import defaultdict
-
     if not rows:
         return {}
 
-    # Sort months canonically
-    MONTH_ORDER = ["Январь","Февраль","Март","Апрель","Май","Июнь",
-                   "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"]
-
     raw_months = sorted(
         {r["month"] for r in rows if r["month"]},
-        key=lambda m: MONTH_ORDER.index(m) if m in MONTH_ORDER else 99,
+        key=_month_sort_key,
     )
 
     # ── 1. Monthly overview ────────────────────────────────────────────────────
@@ -857,7 +893,8 @@ def calc_monthly_trends(rows: list[dict], our_brands: set[str]) -> dict:
     insights: list[dict] = []
     if monthly_overview:
         peak = max(monthly_overview, key=lambda x: x["revenue"])
-        peak_idx = MONTH_ORDER.index(peak["month"]) if peak["month"] in MONTH_ORDER else -1
+        peak_month_name = _month_name(peak["month"])
+        peak_idx = MONTH_ORDER.index(peak_month_name) if peak_month_name in MONTH_ORDER else -1
         if peak_idx in (3, 4):   # Апрель, Май
             peak_comment = "Пик типичен для сезона охлаждения."
         elif peak_idx in (5, 6, 7):  # Июнь–Август
@@ -972,7 +1009,6 @@ def calc_strategy(rows: list[dict], our_brands: set[str]) -> dict:
             vetka_map[v]["our_sku_keys"].add(sku_key(r))
 
     # Competitors per vetka (top 3 by revenue)
-    from collections import defaultdict
     vetka_brand_rev: dict[str, dict] = defaultdict(lambda: defaultdict(float))
     # Also track top SKU per vetka for direct Kaspi links
     vetka_top_sku: dict[str, dict] = {}
@@ -1151,6 +1187,7 @@ def calc_strategy(rows: list[dict], our_brands: set[str]) -> dict:
             "few_reviews": few_reviews,
             "no_reviews_count": len(no_reviews),
             "few_reviews_count": len(few_reviews),
+
             "avg_our_reviews": round(
                 safe_div(sum(s.get("reviews") or 0 for s in our_skus.values()), len(our_skus)), 1
             ) if our_skus else 0,
@@ -1169,4 +1206,207 @@ def calc_strategy(rows: list[dict], our_brands: set[str]) -> dict:
         },
         "review_benchmarks": review_benchmarks,
         "priority_actions": priority_actions,
+    }
+
+
+def calc_rrc_analytics(rows: list[dict], our_brands: set[str]) -> dict:
+    """
+    RRC analytics by vetka (liter range) and subtype (category).
+
+    For each vetka / subtype returns:
+      - market_min_rrc, market_avg_rrc, market_max_rrc
+      - our_avg_rrc (average across our SKUs present in that segment)
+      - position_pct  — how our avg RRC sits vs market avg (positive = above, negative = below)
+      - leader_brand, leader_avg_rrc — top competitor by revenue in that segment
+      - tactic         — "ниже_рынка" | "в_рынке" | "выше_рынка"
+      - tactic_advice  — human-readable recommendation
+      - our_items      — list of our SKUs with kod, name, rrc, abc, revenue
+    """
+    if not rows:
+        return {}
+
+    THRESHOLD_LOW = 0.92   # our_avg < market_avg * 0.92 → ниже рынка
+    THRESHOLD_HIGH = 1.08  # our_avg > market_avg * 1.08 → выше рынка
+
+    def _tactic(our_avg: float, market_avg: float) -> tuple[str, str]:
+        if market_avg <= 0 or our_avg <= 0:
+            return "нет_данных", "Недостаточно данных для рекомендации."
+        ratio = our_avg / market_avg
+        if ratio < THRESHOLD_LOW:
+            pct = round((1 - ratio) * 100, 1)
+            return "ниже_рынка", (
+                f"Наш РРЦ на {pct}% ниже рынка. "
+                "Есть пространство для повышения цены без риска потери позиций."
+            )
+        elif ratio > THRESHOLD_HIGH:
+            pct = round((ratio - 1) * 100, 1)
+            return "выше_рынка", (
+                f"Наш РРЦ на {pct}% выше рынка. "
+                "Убедитесь, что премиум оправдан рейтингом и отзывами."
+            )
+        else:
+            diff = round((ratio - 1) * 100, 1)
+            sign = "+" if diff >= 0 else ""
+            return "в_рынке", (
+                f"РРЦ в рынке ({sign}{diff}%). "
+                "Держать позицию, следить за движением лидера."
+            )
+
+    # ─── collect data by vetka ────────────────────────────────────────────────
+    v_market_rrc: dict[str, list[float]] = defaultdict(list)   # all non-zero rrc
+    v_our_rrc: dict[str, list[float]] = defaultdict(list)
+    v_revenue: dict[str, float] = defaultdict(float)
+    v_our_revenue: dict[str, float] = defaultdict(float)
+    v_comp_rev: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    v_comp_rrc: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+    v_our_items: dict[str, dict] = {}   # vetka → sku_key → item
+
+    # ─── collect data by subtype ──────────────────────────────────────────────
+    t_market_rrc: dict[str, list[float]] = defaultdict(list)
+    t_our_rrc: dict[str, list[float]] = defaultdict(list)
+    t_revenue: dict[str, float] = defaultdict(float)
+    t_our_revenue: dict[str, float] = defaultdict(float)
+    t_comp_rev: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    t_comp_rrc: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+
+    seen_sku_vetka: set[tuple] = set()   # (sku_key, vetka) — deduplicate our items
+
+    for r in rows:
+        v = r["vetka"] or "—"
+        t = r["tip"] or "—"
+        rrc = r["rrc"] or 0
+        rev = r["revenue"] or 0
+        is_ours = r["brand"].upper() in our_brands
+
+        # market RRC (all brands, deduplicated per SKU per vetka)
+        sk = sku_key(r)
+        pair = (sk, v)
+        if rrc > 0 and pair not in seen_sku_vetka:
+            v_market_rrc[v].append(rrc)
+        if rrc > 0:
+            t_market_rrc[t].append(rrc)   # subtypes: not deduped (aggregate view)
+
+        v_revenue[v] += rev
+        t_revenue[t] += rev
+
+        if is_ours:
+            if rrc > 0:
+                v_our_rrc[v].append(rrc)
+                t_our_rrc[t].append(rrc)
+            v_our_revenue[v] += rev
+            t_our_revenue[t] += rev
+
+            # collect our SKU details (one entry per unique SKU per vetka)
+            if pair not in seen_sku_vetka and rrc > 0:
+                key = f"{sk}|{v}"
+                if key not in v_our_items:
+                    v_our_items[key] = {
+                        "vetka": v,
+                        "kod": r["kod"] or "",
+                        "name": r["name"] or r["kod"] or "—",
+                        "brand": r["brand"],
+                        "rrc": rrc,
+                        "abc": r["abc"] or "—",
+                        "revenue": rev,
+                    }
+        else:
+            b = r["brand"]
+            v_comp_rev[v][b] += rev
+            t_comp_rev[t][b] += rev
+            if rrc > 0:
+                v_comp_rrc[v][b].append(rrc)
+                t_comp_rrc[t][b].append(rrc)
+
+        if rrc > 0:
+            seen_sku_vetka.add(pair)
+
+    # ─── build by_vetka result ────────────────────────────────────────────────
+    by_vetka = []
+    for v in sorted(v_revenue, key=lambda x: -v_revenue[x]):
+        mrrcs = v_market_rrc[v]
+        orrcs = v_our_rrc[v]
+        mkt_avg = safe_div(sum(mrrcs), len(mrrcs))
+        our_avg = safe_div(sum(orrcs), len(orrcs))
+        pos_pct = round(safe_div(our_avg - mkt_avg, mkt_avg) * 100, 1) if mkt_avg > 0 else None
+
+        # leader competitor
+        comp_brands_v = v_comp_rev[v]
+        leader_b = max(comp_brands_v, key=lambda b: comp_brands_v[b]) if comp_brands_v else None
+        leader_avg_rrc = (
+            round(safe_div(sum(v_comp_rrc[v][leader_b]), len(v_comp_rrc[v][leader_b])), 0)
+            if leader_b and v_comp_rrc[v][leader_b] else None
+        )
+
+        tac, advice = _tactic(our_avg, mkt_avg)
+
+        our_items_v = sorted(
+            [item for k, item in v_our_items.items() if item["vetka"] == v],
+            key=lambda x: -(x["revenue"] or 0),
+        )
+
+        by_vetka.append({
+            "vetka": v,
+            "market_revenue": round(v_revenue[v], 2),
+            "our_revenue": round(v_our_revenue[v], 2),
+            "our_share_pct": round(safe_div(v_our_revenue[v], v_revenue[v]) * 100, 1),
+            "market_min_rrc": round(min(mrrcs), 0) if mrrcs else None,
+            "market_avg_rrc": round(mkt_avg, 0) if mkt_avg else None,
+            "market_max_rrc": round(max(mrrcs), 0) if mrrcs else None,
+            "our_avg_rrc": round(our_avg, 0) if our_avg else None,
+            "position_pct": pos_pct,
+            "leader_brand": leader_b,
+            "leader_avg_rrc": int(leader_avg_rrc) if leader_avg_rrc is not None else None,
+            "tactic": tac,
+            "tactic_advice": advice,
+            "our_items": our_items_v,
+        })
+
+    # ─── build by_subtype result ──────────────────────────────────────────────
+    by_subtype = []
+    for t in sorted(t_revenue, key=lambda x: -t_revenue[x]):
+        mrrcs = t_market_rrc[t]
+        orrcs = t_our_rrc[t]
+        mkt_avg = safe_div(sum(mrrcs), len(mrrcs))
+        our_avg = safe_div(sum(orrcs), len(orrcs))
+        pos_pct = round(safe_div(our_avg - mkt_avg, mkt_avg) * 100, 1) if mkt_avg > 0 else None
+
+        comp_brands_t = t_comp_rev[t]
+        leader_b = max(comp_brands_t, key=lambda b: comp_brands_t[b]) if comp_brands_t else None
+        leader_avg_rrc = (
+            round(safe_div(sum(t_comp_rrc[t][leader_b]), len(t_comp_rrc[t][leader_b])), 0)
+            if leader_b and t_comp_rrc[t][leader_b] else None
+        )
+
+        tac, advice = _tactic(our_avg, mkt_avg)
+
+        by_subtype.append({
+            "subtype": t,
+            "market_revenue": round(t_revenue[t], 2),
+            "our_revenue": round(t_our_revenue[t], 2),
+            "our_share_pct": round(safe_div(t_our_revenue[t], t_revenue[t]) * 100, 1),
+            "market_min_rrc": round(min(mrrcs), 0) if mrrcs else None,
+            "market_avg_rrc": round(mkt_avg, 0) if mkt_avg else None,
+            "market_max_rrc": round(max(mrrcs), 0) if mrrcs else None,
+            "our_avg_rrc": round(our_avg, 0) if our_avg else None,
+            "position_pct": pos_pct,
+            "leader_brand": leader_b,
+            "leader_avg_rrc": int(leader_avg_rrc) if leader_avg_rrc is not None else None,
+            "tactic": tac,
+            "tactic_advice": advice,
+        })
+
+    # ─── summary ──────────────────────────────────────────────────────────────
+    below = sum(1 for x in by_vetka if x["tactic"] == "ниже_рынка")
+    above = sum(1 for x in by_vetka if x["tactic"] == "выше_рынка")
+    in_market = sum(1 for x in by_vetka if x["tactic"] == "в_рынке")
+
+    return {
+        "by_vetka": by_vetka,
+        "by_subtype": by_subtype,
+        "summary": {
+            "total_vetkas": len(by_vetka),
+            "below_market": below,
+            "in_market": in_market,
+            "above_market": above,
+        },
     }

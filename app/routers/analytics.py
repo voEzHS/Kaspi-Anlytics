@@ -1,7 +1,7 @@
 """Analytics endpoints — query DB, run engine, return JSON."""
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,13 +35,20 @@ async def _get_our_brands(db: AsyncSession) -> set[str]:
     return {"AOLIEGE", "FRIGGIER", "LEADBROS"}
 
 
+def _validate_department(department: str) -> "DeptEnum":
+    try:
+        return DeptEnum[department]
+    except KeyError:
+        raise HTTPException(400, f"Unknown department: '{department}'. Use: {list(DeptEnum.__members__)}")
+
+
 async def _fetch_rows(
     db: AsyncSession,
     department: str,
     month: Optional[str],
     subtype: Optional[str],
 ) -> list[dict]:
-    dept = DeptEnum[department]
+    dept = _validate_department(department)
     q = select(KaspiRow).where(KaspiRow.department == dept)
     if month:
         q = q.where(KaspiRow.month == month)
@@ -135,6 +142,7 @@ async def get_products(
     sort: str = Query("revenue"),
     limit: int = Query(50, le=500),
     offset: int = Query(0),
+    ours_only: Optional[bool] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     rows = await _fetch_rows(db, department, month, subtype)
@@ -143,6 +151,8 @@ async def get_products(
     # Available brands for filter dropdown
     available_brands = sorted({r["brand"] for r in rows if r["brand"]})
 
+    if ours_only:
+        rows = [r for r in rows if r["brand"].upper() in our_brands]
     if brand:
         rows = [r for r in rows if r["brand"] == brand.upper()]
     if abc:
@@ -259,7 +269,7 @@ async def get_months(
     department: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
-    dept = DeptEnum[department]
+    dept = _validate_department(department)
     q = select(distinct(KaspiRow.month)).where(
         KaspiRow.department == dept,
         KaspiRow.month.isnot(None),
@@ -275,7 +285,7 @@ async def get_subtypes(
     department: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
-    dept = DeptEnum[department]
+    dept = _validate_department(department)
     q = select(distinct(KaspiRow.tip)).where(
         KaspiRow.department == dept,
         KaspiRow.tip.isnot(None),
@@ -284,6 +294,21 @@ async def get_subtypes(
     result = await db.execute(q)
     subtypes = sorted(r[0] for r in result.all())
     return {"subtypes": subtypes}
+
+
+@router.get("/rrc")
+async def get_rrc(
+    department: str = Query(...),
+    month: Optional[str] = Query(None),
+    subtype: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """RRC analytics by vetka and subtype: market min/avg/max, our position, tactic."""
+    rows = await _fetch_rows(db, department, month, subtype)
+    if not rows:
+        return {"by_vetka": [], "by_subtype": [], "summary": {}}
+    our_brands = await _get_our_brands(db)
+    return engine.calc_rrc_analytics(rows, our_brands)
 
 
 @router.get("/monthly-trends")
