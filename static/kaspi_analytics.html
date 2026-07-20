@@ -483,7 +483,6 @@ tbody tr:nth-child(even):hover td{background:rgba(255,255,255,.055)}
     <button class="nb" data-p="abc" onclick="showPage('abc')"><i class="ti ti-chart-pie"></i>ABC-анализ</button>
     <button class="nb" data-p="trends" onclick="showPage('trends')"><i class="ti ti-chart-line"></i>Тренды</button>
     <button class="nb" data-p="tactics" onclick="showPage('tactics')"><i class="ti ti-target"></i>Тактика</button>
-    <button class="nb" data-p="rrc" onclick="showPage('rrc')"><i class="ti ti-currency-dollar"></i>РРЦ</button>
   </div>
 
   <div class="nav-bottom">
@@ -569,6 +568,7 @@ tbody tr:nth-child(even):hover td{background:rgba(255,255,255,.055)}
           <div class="sec"><div class="sh"><span class="st">Наша доля по веткам</span></div><div class="sb2"><div class="cw"><canvas id="ch-vs"></canvas></div></div></div>
         </div>
         <div class="sec"><div class="sh"><span class="st">Все ветки</span><button class="btn-csv" onclick="exportCSV('t-vf','vetka')"><i class="ti ti-download" style="font-size:12px"></i>CSV</button></div><div class="sb2"><div class="tw"><table id="t-vf" aria-label="Все ветки рынка"></table></div></div></div>
+
       </div>
     </div>
 
@@ -858,10 +858,10 @@ const CH={};
 const PAL=['#60B8D4','#3FB950','#2F81F7','#D29922','#A371F7','#F85149','#79C0FF','#56D364','#FFA657','#FF7B72','#D2A8FF'];
 const DL={frz:'Морозильники',ref:'Холод. витрины'};
 const DA={frz:'freezers',ref:'refrigerated'};
-const PTITLES={overview:'Обзор',priority:'Приоритеты',brands:'Бренды',vetka:'Ветки',products:'Товары',abc:'ABC',trends:'Тренды',tactics:'Тактика',rrc:'РРЦ-аналитика',upload:'Загрузка',settings:'Настройки'};
+const PTITLES={overview:'Обзор',priority:'Приоритеты',brands:'Бренды',vetka:'Ветки',products:'Товары',abc:'ABC',trends:'Тренды',tactics:'Тактика',upload:'Загрузка',settings:'Настройки'};
 
 const A={dept:'frz',month:'',sub:'',subs:[],pp:1,ps:50,ptotal:0,pOursOnly:false};
-if(!window._brands) window._brands=new Set(['AOLIEGE','FRIGGIER','LEADBROS']);
+if(!window._brands) window._brands=new Set(['AOLIEGE','FRIGGIER','LEADBROS','XINGX','MUXXED']);
 
 // ── HELPERS ──
 function dc(){return A.dept==='ref'?'#3FB950':'#60B8D4'}
@@ -1387,7 +1387,6 @@ function _doRenderActive(){
   else if(p==='priority')renderPriority();
   else if(p==='trends')renderTrends();
   else if(p==='tactics')renderTactics();
-  else if(p==='rrc')renderRRC();
   else if(p==='upload')renderUpload();
   else if(p==='settings')renderSettings();
 }
@@ -1732,7 +1731,28 @@ async function renderVetka(){
               <span style="font-size:11px;color:var(--muted);margin-left:4px">/ ${seg.months_organic} орг.</span>`;
     }
 
-    g('t-vf').innerHTML=`<thead><tr><th>#</th><th>Ветка / Сегмент</th><th>Рынок</th><th>Наша доля</th><th>Лидер</th><th title="Оценка по отзывам, доле, конкуренции (0–100)">Проникновение ⓘ</th><th title="Кампания — активный сбор отзывов · Орг. — естественный рост без кампании">Мес. до №1 ⓘ</th><th>Потенциал ₸</th></tr></thead><tbody>`+
+    const rrcPosFmt=v=>{
+      if(v===null||v===undefined)return '<span style="color:var(--muted)">—</span>';
+      const sign=v>0?'+':'';
+      const col=v>8?'var(--red)':v<-8?'var(--green)':'var(--blue)';
+      const tip=v>8?'Выше рынка':v<-8?'Ниже рынка':'В рынке';
+      return `<span style="color:${col};font-weight:600" title="${tip}">${sign}${v}%</span>`;
+    };
+    g('t-vf').innerHTML=`<thead><tr>
+        <th>#</th>
+        <th>Ветка / Сегмент</th>
+        <th style="text-align:right">Рынок ₸</th>
+        <th style="text-align:right">Продажи шт</th>
+        <th style="text-align:right">Наша доля</th>
+        <th style="text-align:right" class="col-hide-md">Наши шт</th>
+        <th>Лидер</th>
+        <th style="text-align:right" class="col-hide-md">РРЦ рынок</th>
+        <th style="text-align:right" class="col-hide-md">Наш РРЦ</th>
+        <th style="text-align:right">Позиция</th>
+        <th title="Оценка по отзывам, доле, конкуренции (0–100)" class="col-hide-md">Проникн. ⓘ</th>
+        <th title="Кампания — активный сбор отзывов · Орг. — естественный рост без кампании">Мес. №1 ⓘ</th>
+        <th style="text-align:right">Потенциал ₸</th>
+      </tr></thead><tbody>`+
       vetka.map((v,i)=>{
         const seg=segMap[v.vetka];
         const shareColor=v.our_share_pct>=20?'var(--green)':v.our_share_pct>=8?'var(--yellow)':v.our_revenue>0?'var(--red)':'var(--muted)';
@@ -1740,12 +1760,17 @@ async function renderVetka(){
         return `<tr${v.our_revenue>0?' class="or'+(A.dept==='ref'?' ref':'')+'"':''}>
           <td class="rn">${i+1}</td>
           <td style="font-weight:${v.our_revenue>0?'500':'400'}">${escHtml(v.vetka)}</td>
-          <td>${fmtR(v.revenue)}</td>
-          <td style="color:${shareColor}">${v.our_share_pct>0?(+v.our_share_pct).toFixed(1)+'%':'—'}</td>
+          <td style="text-align:right">${fmtR(v.revenue)}</td>
+          <td style="text-align:right;color:var(--muted)">${fmtN(v.units||0)}</td>
+          <td style="text-align:right;color:${shareColor}">${v.our_share_pct>0?(+v.our_share_pct).toFixed(1)+'%':'—'}</td>
+          <td style="text-align:right;color:var(--muted)" class="col-hide-md">${v.our_units>0?fmtN(v.our_units):'—'}</td>
           <td style="font-size:12px">${seg?.leader_brand?`<span style="color:var(--muted)">${escHtml(seg.leader_brand)}</span> <span style="color:var(--red)">${seg.leader_share_pct.toFixed(0)}%</span> ${kLink(seg.leader_name||'',seg.leader_brand,true,v.vetka,seg.leader_kod||'')}`:'—'}</td>
-          <td>${seg?penHtml(seg.penetrability_score):'—'}</td>
+          <td style="text-align:right;color:var(--muted);font-size:12px" class="col-hide-md">${v.avg_rrc?fmtR(v.avg_rrc):'—'}</td>
+          <td style="text-align:right;color:var(--ice);font-weight:600;font-size:12px" class="col-hide-md">${v.our_avg_rrc?fmtR(v.our_avg_rrc):'—'}</td>
+          <td style="text-align:right">${rrcPosFmt(v.rrc_position_pct)}</td>
+          <td class="col-hide-md">${seg?penHtml(seg.penetrability_score):'—'}</td>
           <td>${leadershipHtml(seg, v.our_revenue)}</td>
-          <td style="color:${opportunity>5e6?'var(--green)':opportunity>0?'var(--yellow)':'var(--muted)'}">${opportunity>0?'+'+fmtR(opportunity):'—'}</td>
+          <td style="text-align:right;color:${opportunity>5e6?'var(--green)':opportunity>0?'var(--yellow)':'var(--muted)'}">${opportunity>0?'+'+fmtR(opportunity):'—'}</td>
         </tr>`;
       }).join('')+'</tbody>';
     animateTableRows('t-vf');
@@ -1771,6 +1796,7 @@ async function renderVetka(){
         <i class="ti ti-cash"></i> Расчётный ROI отзывов: в среднем <strong>${fmtR(intel.review_roi_overall)}</strong> дополнительной выручки за 1 отзыв в сегменте (на основе регрессии данных рынка)
       </div>`);
     }
+
   }catch(e){ss('vt','em',e.message);console.error(e);}
 }
 
@@ -2051,7 +2077,7 @@ async function _doUpload(file){
 
 // ── SETTINGS ──
 async function renderSettings(){
-  try{const d=await apig('/settings/');if(d.our_brands)window._brands=new Set(d.our_brands.map(b=>b.toUpperCase()));}catch{}
+  try{const d=await apig('/settings/');if(d.our_brands){const mb=['AOLIEGE','FRIGGIER','LEADBROS','XINGX','MUXXED'];window._brands=new Set([...d.our_brands.map(b=>b.toUpperCase()),...mb]);}}catch{}
   renderBT();
   _loadCachedAI();
   // НАС-01: show current context for AI report

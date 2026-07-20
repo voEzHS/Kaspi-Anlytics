@@ -216,7 +216,7 @@ def calc_vetka(rows: list[dict], our_brands: set[str]) -> list[dict]:
             vmap[k] = {
                 "vetka": k, "revenue": 0.0, "units": 0.0,
                 "sku_keys": set(), "brands": set(), "rrcs": [], "our_rev": 0.0,
-                "our_sku_keys": set(),
+                "our_units": 0.0, "our_rrcs": [], "our_sku_keys": set(),
             }
         v = vmap[k]
         v["revenue"] += r["revenue"] or 0
@@ -227,7 +227,10 @@ def calc_vetka(rows: list[dict], our_brands: set[str]) -> list[dict]:
             v["rrcs"].append(r["rrc"])
         if r["brand"].upper() in our_brands:
             v["our_rev"] += r["revenue"] or 0
+            v["our_units"] += r["units"] or 0
             v["our_sku_keys"].add(sku_key(r))
+            if r["rrc"] > 0:
+                v["our_rrcs"].append(r["rrc"])
         # Track brand revenue totals and top SKU per brand per vetka
         b = r["brand"] or ""
         brand_rev_by_vetka[k][b] += r["revenue"] or 0
@@ -246,14 +249,20 @@ def calc_vetka(rows: list[dict], our_brands: set[str]) -> list[dict]:
             leader_row = brand_top_sku[k].get(leader_b, {})
         else:
             leader_b, leader_row = "", {}
+        mkt_avg_rrc = safe_div(sum(v["rrcs"]), len(v["rrcs"]))
+        our_avg_rrc = safe_div(sum(v["our_rrcs"]), len(v["our_rrcs"]))
+        rrc_pos_pct = round(safe_div(our_avg_rrc - mkt_avg_rrc, mkt_avg_rrc) * 100, 1) if mkt_avg_rrc and our_avg_rrc else None
         result.append({
             "vetka": k,
             "revenue": round(v["revenue"], 2),
             "units": round(v["units"]),
+            "our_units": round(v["our_units"]),
             "skus": len(v["sku_keys"]),
             "our_skus": len(v["our_sku_keys"]),
             "brands": len(v["brands"]),
-            "avg_rrc": round(safe_div(sum(v["rrcs"]), len(v["rrcs"])), 2),
+            "avg_rrc": round(mkt_avg_rrc, 0) if mkt_avg_rrc else None,
+            "our_avg_rrc": round(our_avg_rrc, 0) if our_avg_rrc else None,
+            "rrc_position_pct": rrc_pos_pct,
             "market_share_pct": round(safe_div(v["revenue"], total_rev) * 100, 2),
             "our_revenue": round(v["our_rev"], 2),
             "our_share_pct": round(safe_div(v["our_rev"], v["revenue"]) * 100, 2),
