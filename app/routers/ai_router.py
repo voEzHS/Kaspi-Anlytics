@@ -348,7 +348,7 @@ async def generate_report(
 
     our_brands = await _get_our_brands(db)
     row_dicts = engine.apply_business_rules([
-        {"brand": r.brand, "tip": r.tip, "vetka": r.vetka, "revenue": r.revenue or 0,
+        {"brand": r.brand or "", "tip": r.tip, "vetka": r.vetka, "revenue": r.revenue or 0,
          "units": r.units or 0, "abc": r.abc, "rating": r.rating or 0,
          "reviews": r.reviews or 0, "sellers": r.sellers or 0, "month": r.month,
          "kod": r.kod or "", "name": r.name or "", "rrc": r.rrc or 0,
@@ -356,64 +356,71 @@ async def generate_report(
         for r in rows
     ])
 
-    # Gather all analytics data for rich context
-    overview = engine.calc_overview(row_dicts, our_brands)
-    brands = engine.calc_brands(row_dicts, our_brands)
-    vetka_data = engine.calc_vetka(row_dicts, our_brands)
-    subtype_compare = engine.calc_subtype_compare(row_dicts, our_brands) if department == "freezers" and not subtype else []
-    strategy = engine.calc_strategy(row_dicts, our_brands)
-    rrc_data = engine.calc_rrc_analytics(row_dicts, our_brands)
+    # Gather all analytics data for rich context.
+    # Wrapped broadly: any unexpected data shape here would otherwise surface as a
+    # bare, undiagnosable "Internal Server Error" — this gives us the real cause.
+    try:
+        overview = engine.calc_overview(row_dicts, our_brands)
+        brands = engine.calc_brands(row_dicts, our_brands)
+        vetka_data = engine.calc_vetka(row_dicts, our_brands)
+        subtype_compare = engine.calc_subtype_compare(row_dicts, our_brands) if department == "freezers" and not subtype else []
+        strategy = engine.calc_strategy(row_dicts, our_brands)
+        rrc_data = engine.calc_rrc_analytics(row_dicts, our_brands)
+    except Exception as e:
+        raise HTTPException(500, f"Ошибка подготовки данных ({type(e).__name__}): {e}")
 
     our_brands_list = ", ".join(sorted(our_brands))
     dept_label = DEPT_LABELS.get(department, department)
     period = f"{month}" if month else "все месяцы в базе"
     sub_label = f" · только {subtype}" if subtype else ""
 
-    # ── Market overview ──────────────────────────────────────
-    total_rev = overview.get('total_revenue', 0)
-    our_rev = overview.get('our_revenue', 0)
-    our_share = overview.get('our_share_pct', 0)
-    our_rating = overview.get('our_avg_rating', 0)
-    our_sku = overview.get('our_sku', 0)
-    our_abc_a = overview.get('our_abc_a', 0)
+    try:
+        # ── Market overview ──────────────────────────────────────
+        total_rev = overview.get('total_revenue', 0)
+        our_rev = overview.get('our_revenue', 0)
+        our_share = overview.get('our_share_pct', 0)
+        our_rating = overview.get('our_avg_rating', 0)
+        our_sku = overview.get('our_sku', 0)
+        our_abc_a = overview.get('our_abc_a', 0)
 
-    # ── Brands: split ours vs competitors ───────────────────
-    our_brand_rows = [b for b in brands if b.get('is_ours')]
-    comp_brand_rows = [b for b in brands if not b.get('is_ours')][:8]
+        # ── Brands: split ours vs competitors ───────────────────
+        our_brand_rows = [b for b in brands if b.get('is_ours')]
+        comp_brand_rows = [b for b in brands if not b.get('is_ours')][:8]
 
-    # ── Vetka opportunities: where market is large but we're weak ──
-    vetka_opportunities = [
-        v for v in vetka_data
-        if v.get('revenue', 0) > total_rev * 0.05  # >5% of market
-        and v.get('our_share_pct', 0) < 10          # but we have <10% share
-    ]
-    vetka_strengths = [
-        v for v in vetka_data
-        if v.get('our_share_pct', 0) >= 20
-    ]
+        # ── Vetka opportunities: where market is large but we're weak ──
+        vetka_opportunities = [
+            v for v in vetka_data
+            if v.get('revenue', 0) > total_rev * 0.05  # >5% of market
+            and v.get('our_share_pct', 0) < 10          # but we have <10% share
+        ]
+        vetka_strengths = [
+            v for v in vetka_data
+            if v.get('our_share_pct', 0) >= 20
+        ]
 
-    # ── RRC position summary ────────────────────────────────
-    rrc_by_vetka = rrc_data.get('by_vetka', [])
-    rrc_below = [r for r in rrc_by_vetka if r.get('tactic') == 'ниже_рынка']
-    rrc_above = [r for r in rrc_by_vetka if r.get('tactic') == 'выше_рынка']
-    rrc_in = [r for r in rrc_by_vetka if r.get('tactic') == 'в_рынке']
+        # ── RRC position summary ────────────────────────────────
+        rrc_by_vetka = rrc_data.get('by_vetka', [])
+        rrc_below = [r for r in rrc_by_vetka if r.get('tactic') == 'ниже_рынка']
+        rrc_above = [r for r in rrc_by_vetka if r.get('tactic') == 'выше_рынка']
+        rrc_in = [r for r in rrc_by_vetka if r.get('tactic') == 'в_рынке']
 
-    # ── Strategy signals ────────────────────────────────────
-    review_deficit_data = strategy.get('review_deficit', {})
-    no_reviews_skus = review_deficit_data.get('no_reviews', [])[:5]
-    few_reviews_skus = review_deficit_data.get('few_reviews', [])[:5]
-    gaps = [g for g in strategy.get('segment_gaps', []) if g.get('is_gap')][:5]
-    low_rating = strategy.get('low_rating_skus', [])[:5]
-    priority_actions = strategy.get('priority_actions', [])
+        # ── Strategy signals ────────────────────────────────────
+        review_deficit_data = strategy.get('review_deficit', {})
+        no_reviews_skus = review_deficit_data.get('no_reviews', [])[:5]
+        few_reviews_skus = review_deficit_data.get('few_reviews', [])[:5]
+        gaps = [g for g in strategy.get('segment_gaps', []) if g.get('is_gap')][:5]
+        low_rating = strategy.get('low_rating_skus', [])[:5]
+        priority_actions = strategy.get('priority_actions', [])
 
-    def fmt_rev(v: float) -> str:
-        if v >= 1_000_000:
-            return f"{v/1_000_000:.1f} млн ₸"
-        if v >= 1_000:
-            return f"{v/1_000:.0f} тыс ₸"
-        return f"{v:.0f} ₸"
+        def fmt_rev(v) -> str:
+            v = v or 0
+            if v >= 1_000_000:
+                return f"{v/1_000_000:.1f} млн ₸"
+            if v >= 1_000:
+                return f"{v/1_000:.0f} тыс ₸"
+            return f"{v:.0f} ₸"
 
-    prompt = f"""Определи ТОП-приоритеты действий по категории: **{dept_label}{sub_label}**
+        prompt = f"""Определи ТОП-приоритеты действий по категории: **{dept_label}{sub_label}**
 Период анализа: **{period}**
 Наши бренды: {our_brands_list}
 
@@ -446,7 +453,7 @@ async def generate_report(
 Ниже рынка ({len(rrc_below)} веток): {', '.join(r['vetka'] for r in rrc_below[:4]) or '—'}
 В рынке ({len(rrc_in)} веток): {', '.join(r['vetka'] for r in rrc_in[:4]) or '—'}
 Выше рынка ({len(rrc_above)} веток): {', '.join(r['vetka'] for r in rrc_above[:4]) or '—'}
-{chr(10).join(f"  Ветка {r['vetka']}: рынок РРЦ {fmt_rev(r.get('market_avg_rrc') or 0)}, наш РРЦ {fmt_rev(r.get('our_avg_rrc') or 0)} ({(r.get('position_pct') or 0):+.0f}%)" for r in rrc_by_vetka[:6]) if rrc_by_vetka else "  — нет данных по РРЦ"}
+{chr(10).join(f"  Ветка {r['vetka']}: рынок РРЦ {fmt_rev(r.get('market_avg_rrc'))}, наш РРЦ {fmt_rev(r.get('our_avg_rrc'))} ({(r.get('position_pct') or 0):+.0f}%)" for r in rrc_by_vetka[:6]) if rrc_by_vetka else "  — нет данных по РРЦ"}
 
 ══════════════════════════════════════
 🔍 СТРАТЕГИЧЕСКИЕ СИГНАЛЫ
@@ -464,7 +471,7 @@ async def generate_report(
 {chr(10).join(f"  ❗ {r.get('name','')[:55]} [{r.get('brand','')}] — рейтинг {r.get('rating',0):.1f} ({r.get('reviews',0)} отз.)" for r in low_rating) or "  — все наши товары с нормальным рейтингом"}
 
 ГОТОВЫЕ ПРИОРИТЕТЫ (авто-расчёт):
-{chr(10).join(f"  {i+1}. {a.get('title','')} [{a.get('impact','').upper()}] — {a.get('description','')[:100]}" for i,a in enumerate(priority_actions)) or "  — нет критических действий"}
+{chr(10).join(f"  {i+1}. {a.get('title','')} [{(a.get('impact') or '').upper()}] — {a.get('description','')[:100]}" for i,a in enumerate(priority_actions)) or "  — нет критических действий"}
 
 ══════════════════════════════════════
 ЗАДАНИЕ
@@ -484,6 +491,10 @@ async def generate_report(
 и почему, если ресурсов хватает только на одно действие.
 
 Используй только данные выше. Называй конкретные ветки, бренды, суммы. Никакой воды и общих фраз."""
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Ошибка построения промпта ({type(e).__name__}): {e}")
 
     client = anthropic.Anthropic(api_key=api_key)
     try:
@@ -494,14 +505,21 @@ async def generate_report(
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
         )
-    except anthropic.APIStatusError as e:
-        # Surface the real reason (bad model id, no credits, auth issue, etc.)
-        detail = getattr(e, "message", None) or str(e)
-        raise HTTPException(e.status_code or 502, f"Anthropic API error: {detail}")
-    except anthropic.APIConnectionError as e:
-        raise HTTPException(502, f"Не удалось связаться с Anthropic API: {e}")
     except Exception as e:
-        raise HTTPException(500, f"Ошибка генерации отчёта: {type(e).__name__}: {e}")
+        # Deliberately catch a bare Exception here (not specific anthropic.* subclasses):
+        # the exact exception class names vary between SDK versions, and referencing a
+        # class that doesn't exist in the installed version would itself raise AttributeError
+        # while Python evaluates the except clause — masking the real error as a bare 500.
+        status_code = getattr(e, "status_code", None)
+        body = getattr(e, "body", None)
+        api_msg = None
+        if isinstance(body, dict):
+            err = body.get("error")
+            if isinstance(err, dict):
+                api_msg = err.get("message")
+        detail = api_msg or getattr(e, "message", None) or str(e) or type(e).__name__
+        code = status_code if isinstance(status_code, int) and 400 <= status_code < 600 else 500
+        raise HTTPException(code, f"Ошибка генерации приоритетов ({type(e).__name__}): {detail}")
 
     return {
         "department": department,
