@@ -486,13 +486,22 @@ async def generate_report(
 Используй только данные выше. Называй конкретные ветки, бренды, суммы. Никакой воды и общих фраз."""
 
     client = anthropic.Anthropic(api_key=api_key)
-    message = await asyncio.to_thread(
-        client.messages.create,
-        model="claude-opus-4-8",
-        max_tokens=2000,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    try:
+        message = await asyncio.to_thread(
+            client.messages.create,
+            model="claude-opus-4-8",
+            max_tokens=2000,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.APIStatusError as e:
+        # Surface the real reason (bad model id, no credits, auth issue, etc.)
+        detail = getattr(e, "message", None) or str(e)
+        raise HTTPException(e.status_code or 502, f"Anthropic API error: {detail}")
+    except anthropic.APIConnectionError as e:
+        raise HTTPException(502, f"Не удалось связаться с Anthropic API: {e}")
+    except Exception as e:
+        raise HTTPException(500, f"Ошибка генерации отчёта: {type(e).__name__}: {e}")
 
     return {
         "department": department,
