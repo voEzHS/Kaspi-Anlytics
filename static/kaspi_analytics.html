@@ -785,13 +785,13 @@ tbody tr:nth-child(even):hover td{background:rgba(255,255,255,.055)}
           </div>
         </div>
         <div class="sec">
-          <div class="sh"><span class="st">AI-отчёт</span></div>
+          <div class="sh"><span class="st">Стратегия от AI-аналитика</span></div>
           <div class="sb2">
             <div id="ai-ctx-info" style="font-size:12px;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <i class="ti ti-info-circle" style="font-size:13px"></i>
-              <span>Анализ рынка через Claude AI</span>
+              <span>Стратегия действий от AI-аналитика (Claude)</span>
             </div>
-            <button class="btn btn-ice" onclick="genAI()" id="ai-btn"><i class="ti ti-robot"></i>Сгенерировать отчёт</button>
+            <button class="btn btn-ice" onclick="genAI()" id="ai-btn"><i class="ti ti-robot"></i>Определить приоритеты</button>
             <div id="ai-r" style="margin-top:16px"></div>
           </div>
         </div>
@@ -2086,7 +2086,7 @@ async function renderSettings(){
     const deptLabel=A.dept==='frz'?'Морозильники':'Холод. витрины';
     const monthLabel=A.month||'все месяцы';
     aiCtx.innerHTML=`<i class="ti ti-info-circle" style="font-size:13px"></i>
-      <span>Анализ для: <strong style="color:var(--text)">${deptLabel}</strong></span>
+      <span>Приоритеты для: <strong style="color:var(--text)">${deptLabel}</strong></span>
       <span style="color:var(--border)">·</span>
       <span>Период: <strong style="color:var(--text)">${monthLabel}</strong></span>`;
   }
@@ -3176,7 +3176,7 @@ async function renderTactics(){
     if(aiCtxTc){
       const dl=A.dept==='frz'?'Морозильники':'Холод. витрины';
       const ml=A.month||'все месяцы';
-      aiCtxTc.innerHTML=`Анализ для: <strong style="color:var(--text)">${dl}</strong> · Период: <strong style="color:var(--text)">${ml}</strong> · требует ANTHROPIC_API_KEY`;
+      aiCtxTc.innerHTML=`Приоритеты для: <strong style="color:var(--text)">${dl}</strong> · Период: <strong style="color:var(--text)">${ml}</strong> · требует ANTHROPIC_API_KEY`;
     }
     const [ovData, brData, vtData, abcData, stData, intelData] = await Promise.all([
       apig('/analytics/overview?'+qsp()),
@@ -3687,7 +3687,7 @@ async function genAI(ctx){
   // ctx='tc' for Tactics tab, undefined for Settings
   const btnId = ctx==='tc' ? 'ai-btn-tc' : 'ai-btn';
   const boxId = ctx==='tc' ? 'ai-r-tc'   : 'ai-r';
-  const doneLabel = ctx==='tc' ? '<i class="ti ti-sparkles"></i>Сгенерировать' : '<i class="ti ti-robot"></i>Сгенерировать отчёт';
+  const doneLabel = ctx==='tc' ? '<i class="ti ti-sparkles"></i>Сгенерировать' : '<i class="ti ti-robot"></i>Определить приоритеты';
   const btn=g(btnId);const box=g(boxId);
   if(!btn||!box)return;
 

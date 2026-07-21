@@ -17,8 +17,11 @@ router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 DEFAULTS = {
-    "our_brands": ["AOLIEGE", "FRIGGIER", "LEADBROS"],
+    "our_brands": ["AOLIEGE", "FRIGGIER", "LEADBROS", "XINGX", "MUXXED"],
 }
+
+# Brands that are ALWAYS ours regardless of DB settings
+MANDATORY_BRANDS: set[str] = {"AOLIEGE", "FRIGGIER", "LEADBROS", "XINGX", "MUXXED"}
 
 
 class SettingsPayload(BaseModel):

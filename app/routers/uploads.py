@@ -25,8 +25,10 @@ async def require_admin(x_admin_token: Optional[str] = Header(None)):
     if x_admin_token != ADMIN_PASSWORD:
         raise HTTPException(403, "Неверный пароль администратора")
 
-UPLOAD_DIR = "/app/uploads"
+UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "50")) * 1024 * 1024  # default 50 MB
 
 # ── Column name → field key mapping ──────────────────────────────────────────
 HEADER_MAP = {
@@ -273,37 +275,44 @@ def parse_excel(filepath: str) -> list[dict]:
 @router.post("/preview", summary="Preview Excel parse without saving")
 async def preview_parse(file: UploadFile = File(...)):
     """Parse Excel and return diagnostic info — does NOT save to DB."""
-    import tempfile, openpyxl as ox
+    import tempfile
+    import openpyxl as ox
 
     content = await file.read()
-    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"Файл слишком большой (максимум {MAX_UPLOAD_BYTES // 1024 // 1024} МБ)")
 
-    wb = ox.load_workbook(tmp_path, read_only=True, data_only=True)
-    sheets = wb.sheetnames
-    chosen_sheet = _find_sheet(wb)
-    ws = wb[chosen_sheet]
-    rows_raw = list(ws.iter_rows(values_only=True))
-    wb.close()
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
 
-    header_idx = _find_header(rows_raw)
-    headers = rows_raw[header_idx]
-    col = _build_col_map(headers)
+        wb = ox.load_workbook(tmp_path, read_only=True, data_only=True)
+        sheets = wb.sheetnames
+        chosen_sheet = _find_sheet(wb)
+        ws = wb[chosen_sheet]
+        rows_raw = list(ws.iter_rows(values_only=True))
+        wb.close()
 
-    # Show first 3 data rows
-    sample = []
-    for row in rows_raw[header_idx + 1: header_idx + 6]:
-        if row and not all(c is None or c == "" for c in row):
-            sample.append(list(row))
+        header_idx = _find_header(rows_raw)
+        headers = rows_raw[header_idx]
+        col = _build_col_map(headers)
 
-    parsed = parse_excel(tmp_path)
-    brands_found = {}
-    for r in parsed:
-        b = r["brand"]
-        brands_found[b] = brands_found.get(b, 0) + 1
+        sample = []
+        for row in rows_raw[header_idx + 1: header_idx + 6]:
+            if row and not all(c is None or c == "" for c in row):
+                sample.append(list(row))
 
-    import os; os.unlink(tmp_path)
+        parsed = parse_excel(tmp_path)
+        brands_found = {}
+        for r in parsed:
+            b = r["brand"]
+            brands_found[b] = brands_found.get(b, 0) + 1
+
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
     return {
         "sheets_in_file": sheets,
@@ -343,6 +352,8 @@ async def upload_file(
     safe_name = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{file.filename}"
     filepath = os.path.join(UPLOAD_DIR, safe_name)
     content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"Файл слишком большой (максимум {MAX_UPLOAD_BYTES // 1024 // 1024} МБ)")
     with open(filepath, "wb") as f:
         f.write(content)
 
@@ -366,6 +377,27 @@ async def upload_file(
     dept = DeptEnum[department]
     months = sorted({r["month"] for r in parsed if r["month"]})
     subtypes = sorted({r["tip"] for r in parsed if r["tip"]})
+
+    # ── Duplicate month guard ────────────────────────────────────────────
+    # Check if any of the months in this file are already loaded for this dept.
+    # If so, warn — uploading would double all metrics for those months.
+    if months:
+        existing_uploads = await db.execute(
+            select(Upload).where(Upload.department == dept)
+        )
+        all_uploads = existing_uploads.scalars().all()
+        already_loaded = []
+        for u in all_uploads:
+            for m in (u.months or []):
+                if m in months:
+                    already_loaded.append(m)
+        if already_loaded:
+            dupes = sorted(set(already_loaded))
+            raise HTTPException(
+                409,
+                f"Данные за {', '.join(dupes)} уже загружены для этого отдела. "
+                f"Удалите старую загрузку прежде чем загружать снова, иначе метрики удвоятся."
+            )
 
     # Create upload record
     upload = Upload(
