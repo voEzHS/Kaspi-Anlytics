@@ -436,7 +436,7 @@ async def generate_report(
 {chr(10).join(f"  ✅ {v['vetka']}: рынок {fmt_rev(v['revenue'])}, наша доля {v['our_share_pct']:.1f}%, наша выручка {fmt_rev(v['our_revenue'])}" for v in vetka_strengths) or "  — нигде нет доминирующей позиции"}
 
 ВЕТКИ — ВОЗМОЖНОСТИ (рынок >5%, наша доля <10%):
-{chr(10).join(f"  ⚠️ {v['vetka']}: рынок {fmt_rev(v['revenue'])}, мы там на {v['our_share_pct']:.1f}% — лидер: {v.get('leader','?')}" for v in vetka_opportunities) or "  — нет явных упущенных сегментов"}
+{chr(10).join(f"  ⚠️ {v['vetka']}: рынок {fmt_rev(v['revenue'])}, мы там на {v['our_share_pct']:.1f}% — лидер: {v.get('leader_brand') or '?'}" for v in vetka_opportunities) or "  — нет явных упущенных сегментов"}
 
 {("СРАВНЕНИЕ ПОДТИПОВ:" + chr(10) + chr(10).join(f"  • {s['subtype']}: рынок {fmt_rev(s['revenue'])} ({s['market_share_pct']:.1f}%), мы {s['our_share_pct']:.1f}%" for s in subtype_compare)) if subtype_compare else ""}
 
@@ -446,7 +446,7 @@ async def generate_report(
 Ниже рынка ({len(rrc_below)} веток): {', '.join(r['vetka'] for r in rrc_below[:4]) or '—'}
 В рынке ({len(rrc_in)} веток): {', '.join(r['vetka'] for r in rrc_in[:4]) or '—'}
 Выше рынка ({len(rrc_above)} веток): {', '.join(r['vetka'] for r in rrc_above[:4]) or '—'}
-{chr(10).join(f"  Ветка {r['vetka']}: рынок РРЦ {fmt_rev(r.get('market_avg_rrc',0))}, наш РРЦ {fmt_rev(r.get('our_avg_rrc',0))} ({r.get('rrc_position_pct',0):+.0f}%)" for r in rrc_by_vetka[:6]) if rrc_by_vetka else "  — нет данных по РРЦ"}
+{chr(10).join(f"  Ветка {r['vetka']}: рынок РРЦ {fmt_rev(r.get('market_avg_rrc') or 0)}, наш РРЦ {fmt_rev(r.get('our_avg_rrc') or 0)} ({(r.get('position_pct') or 0):+.0f}%)" for r in rrc_by_vetka[:6]) if rrc_by_vetka else "  — нет данных по РРЦ"}
 
 ══════════════════════════════════════
 🔍 СТРАТЕГИЧЕСКИЕ СИГНАЛЫ
