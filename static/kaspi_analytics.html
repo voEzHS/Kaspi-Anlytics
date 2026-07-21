@@ -204,6 +204,38 @@ tbody tr:nth-child(even):hover td{background:rgba(255,255,255,.055)}
 .brand-tags{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;min-height:36px}
 .ai-box{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:20px;font-size:13px;line-height:1.9;white-space:pre-wrap}
 
+/* ── AI STRATEGY (structured cards) ─────────────────────────────────────── */
+textarea.inp{background:var(--s2);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:var(--r);font-size:13px;font-family:inherit;line-height:1.5;transition:border-color .15s;resize:vertical}
+textarea.inp:focus{outline:none;border-color:var(--blue)}
+textarea.inp::placeholder{color:var(--muted)}
+.ai-filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+.ai-summary{background:rgba(96,184,212,.06);border:1px solid rgba(96,184,212,.25);border-radius:var(--r);padding:14px 16px;font-size:13px;line-height:1.65;color:var(--text);margin-bottom:18px}
+.ai-priorities{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
+.ai-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;border-left:3px solid var(--border)}
+.ai-card.imp-high{border-left-color:var(--red)}
+.ai-card.imp-medium{border-left-color:var(--yellow)}
+.ai-card.imp-low{border-left-color:var(--muted)}
+.ai-card-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.ai-card-num{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--s3);color:var(--muted);font-size:11px;font-weight:700;flex-shrink:0}
+.ai-card-title{font-size:14px;font-weight:600;color:var(--text);flex:1;min-width:180px}
+.ai-badge-impact{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap}
+.ai-badge-impact.imp-high{background:rgba(248,81,73,.12);color:var(--red);border:1px solid rgba(248,81,73,.3)}
+.ai-badge-impact.imp-medium{background:rgba(210,153,34,.12);color:var(--yellow);border:1px solid rgba(210,153,34,.3)}
+.ai-badge-impact.imp-low{background:rgba(139,148,158,.12);color:var(--muted);border:1px solid var(--border)}
+.ai-card-body{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;font-size:12.5px;line-height:1.55;color:var(--muted)}
+@media(max-width:700px){.ai-card-body{grid-template-columns:1fr}}
+.ai-card-body b{color:var(--text);font-weight:600}
+.ai-sku-section{margin-top:6px}
+.ai-sku-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:10px}
+.ai-sku-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.ai-sku-table th{text-align:left;padding:7px 10px;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border)}
+.ai-sku-table td{padding:8px 10px;border-bottom:1px solid rgba(48,54,61,.4);vertical-align:top}
+.ai-sku-table tr:hover td{background:rgba(255,255,255,.02)}
+.ai-urg-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.ai-urg-dot.imp-high{background:var(--red)}
+.ai-urg-dot.imp-medium{background:var(--yellow)}
+.ai-urg-dot.imp-low{background:var(--muted)}
+
 /* ── TACTICS ─────────────────────────────────────────────────────────── */
 .tac-status{display:flex;align-items:center;gap:10px;padding:14px 18px;border-radius:var(--r);font-size:14px;font-weight:600;margin-bottom:20px}
 .tac-status.good{background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.35);color:var(--green)}
@@ -654,14 +686,21 @@ tbody tr:nth-child(even):hover td{background:rgba(255,255,255,.055)}
         </div>
         <div class="sec">
           <div class="sh">
-            <span class="st"><i class="ti ti-robot" style="color:var(--ice)"></i> AI-анализ через Claude</span>
-            <button class="btn btn-ice btn-sm" onclick="genAI('tc')" id="ai-btn-tc"><i class="ti ti-sparkles"></i>Сгенерировать</button>
+            <span class="st"><i class="ti ti-robot" style="color:var(--ice)"></i> Стратегия от AI-аналитика</span>
           </div>
-          <div class="sb2" id="ai-r-tc">
+          <div class="sb2">
             <div style="font-size:12px;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <i class="ti ti-info-circle" style="font-size:13px"></i>
-              <span id="ai-ctx-tc">Нажми кнопку для глубокого AI-анализа (требует ANTHROPIC_API_KEY)</span>
+              <span id="ai-ctx-tc">Требует ANTHROPIC_API_KEY</span>
             </div>
+            <div class="ai-filters">
+              <select class="sel" id="ai-vetka-sel-tc" style="min-width:200px">
+                <option value="">Все ветки (общая стратегия)</option>
+              </select>
+            </div>
+            <textarea class="inp" id="ai-query-tc" rows="2" style="width:100%;margin-bottom:12px" placeholder="Необязательно — свой вопрос, например: «что делать с ларями 500-600л»"></textarea>
+            <button class="btn btn-ice btn-sm" onclick="genAI('tc')" id="ai-btn-tc"><i class="ti ti-sparkles"></i>Определить приоритеты</button>
+            <div id="ai-r-tc" style="margin-top:14px"></div>
           </div>
         </div>
       </div>
@@ -771,29 +810,34 @@ tbody tr:nth-child(even):hover td{background:rgba(255,255,255,.055)}
 
     <!-- SETTINGS -->
     <div id="page-settings" class="page">
-      <div class="g2" style="align-items:start">
-        <div class="sec">
-          <div class="sh"><span class="st">Наши бренды</span></div>
-          <div class="sb2">
-            <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Отмечаются в аналитике как «наши»</p>
-            <div class="brand-tags" id="brand-tags"></div>
-            <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
-              <input class="inp" id="bi" placeholder="Добавить бренд..." style="width:220px" onkeydown="if(event.key==='Enter')addBrand()">
-              <button class="btn btn-p" onclick="addBrand()"><i class="ti ti-plus"></i>Добавить</button>
-            </div>
-            <button class="btn btn-g" onclick="saveBrands()"><i class="ti ti-device-floppy"></i>Сохранить</button>
+      <div class="sec" style="margin-bottom:16px">
+        <div class="sh"><span class="st">Наши бренды</span></div>
+        <div class="sb2">
+          <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Отмечаются в аналитике как «наши»</p>
+          <div class="brand-tags" id="brand-tags"></div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+            <input class="inp" id="bi" placeholder="Добавить бренд..." style="width:220px" onkeydown="if(event.key==='Enter')addBrand()">
+            <button class="btn btn-p" onclick="addBrand()"><i class="ti ti-plus"></i>Добавить</button>
           </div>
+          <button class="btn btn-g" onclick="saveBrands()"><i class="ti ti-device-floppy"></i>Сохранить</button>
         </div>
-        <div class="sec">
-          <div class="sh"><span class="st">Стратегия от AI-аналитика</span></div>
-          <div class="sb2">
-            <div id="ai-ctx-info" style="font-size:12px;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <i class="ti ti-info-circle" style="font-size:13px"></i>
-              <span>Стратегия действий от AI-аналитика (Claude)</span>
-            </div>
-            <button class="btn btn-ice" onclick="genAI()" id="ai-btn"><i class="ti ti-robot"></i>Определить приоритеты</button>
-            <div id="ai-r" style="margin-top:16px"></div>
+      </div>
+
+      <div class="sec">
+        <div class="sh"><span class="st"><i class="ti ti-robot" style="color:var(--ice)"></i> Стратегия от AI-аналитика</span></div>
+        <div class="sb2">
+          <div id="ai-ctx-info" style="font-size:12px;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <i class="ti ti-info-circle" style="font-size:13px"></i>
+            <span>Стратегия действий от AI-аналитика (Claude)</span>
           </div>
+          <div class="ai-filters">
+            <select class="sel" id="ai-vetka-sel" style="min-width:200px">
+              <option value="">Все ветки (общая стратегия)</option>
+            </select>
+          </div>
+          <textarea class="inp" id="ai-query" rows="2" style="width:100%;margin-bottom:12px" placeholder="Необязательно — свой вопрос, например: «что делать с ларями 500-600л» или «почему FRIGGIER теряет долю»"></textarea>
+          <button class="btn btn-ice" onclick="genAI()" id="ai-btn"><i class="ti ti-robot"></i>Определить приоритеты</button>
+          <div id="ai-r" style="margin-top:18px"></div>
         </div>
       </div>
     </div>
@@ -2079,17 +2123,35 @@ async function _doUpload(file){
 async function renderSettings(){
   try{const d=await apig('/settings/');if(d.our_brands){const mb=['AOLIEGE','FRIGGIER','LEADBROS','XINGX','MUXXED'];window._brands=new Set([...d.our_brands.map(b=>b.toUpperCase()),...mb]);}}catch{}
   renderBT();
+  loadAIVetkaOptions();
   _loadCachedAI();
   // НАС-01: show current context for AI report
   const aiCtx=g('ai-ctx-info');
   if(aiCtx){
     const deptLabel=A.dept==='frz'?'Морозильники':'Холод. витрины';
     const monthLabel=A.month||'все месяцы';
+    const subLabel=A.sub?` · ${A.sub}`:'';
     aiCtx.innerHTML=`<i class="ti ti-info-circle" style="font-size:13px"></i>
-      <span>Приоритеты для: <strong style="color:var(--text)">${deptLabel}</strong></span>
+      <span>Приоритеты для: <strong style="color:var(--text)">${deptLabel}${subLabel}</strong></span>
       <span style="color:var(--border)">·</span>
       <span>Период: <strong style="color:var(--text)">${monthLabel}</strong></span>`;
   }
+}
+// Populate the vetka dropdown for the AI panel, scoped to current department (+subtype).
+// ctx='tc' targets the Tactics-page select, otherwise the Settings-page one.
+async function loadAIVetkaOptions(ctx){
+  const sel = g(ctx==='tc' ? 'ai-vetka-sel-tc' : 'ai-vetka-sel');
+  if(!sel) return;
+  const prevVal = sel.value;
+  try{
+    const q=new URLSearchParams({department:DA[A.dept]});
+    if(A.sub) q.set('subtype', A.sub);
+    const d = await apig('/analytics/vetka?'+q);
+    const list = (d.vetka || []).map(v=>v.vetka).filter(Boolean);
+    sel.innerHTML = '<option value="">Все ветки (общая стратегия)</option>' +
+      list.map(v=>`<option value="${escHtml(v)}">${escHtml(v)}л</option>`).join('');
+    if(list.includes(prevVal)) sel.value = prevVal;
+  }catch{}
 }
 function renderBT(){
   const tags=g('brand-tags');
@@ -3176,8 +3238,10 @@ async function renderTactics(){
     if(aiCtxTc){
       const dl=A.dept==='frz'?'Морозильники':'Холод. витрины';
       const ml=A.month||'все месяцы';
-      aiCtxTc.innerHTML=`Приоритеты для: <strong style="color:var(--text)">${dl}</strong> · Период: <strong style="color:var(--text)">${ml}</strong> · требует ANTHROPIC_API_KEY`;
+      const sl=A.sub?` · ${A.sub}`:'';
+      aiCtxTc.innerHTML=`Приоритеты для: <strong style="color:var(--text)">${dl}${sl}</strong> · Период: <strong style="color:var(--text)">${ml}</strong>`;
     }
+    loadAIVetkaOptions('tc');
     const [ovData, brData, vtData, abcData, stData, intelData] = await Promise.all([
       apig('/analytics/overview?'+qsp()),
       apig('/analytics/brands?'+qsp()),
@@ -3683,11 +3747,74 @@ async function renderTactics(){
 }
 
 // ── AI ──
+// Builds the structured HTML view (summary + priority cards + per-SKU table)
+// from the JSON returned by /ai/report. Kept as a pure function so both the
+// live response and the sessionStorage cache render through the same code path.
+function renderAIStrategy(d){
+  const impCls = lvl => ['high','medium','low'].includes(lvl) ? 'imp-'+lvl : 'imp-low';
+  const impLabel = lvl => lvl==='high' ? 'Высокий эффект' : lvl==='medium' ? 'Средний эффект' : 'Низкий эффект';
+
+  let html = '';
+
+  if(d.user_query){
+    html += `<div style="font-size:11px;color:var(--muted);margin-bottom:10px"><i class="ti ti-message-circle" style="font-size:12px"></i> Вопрос: «${escHtml(d.user_query)}»</div>`;
+  }
+
+  if(d.summary){
+    html += `<div class="ai-summary">${escHtml(d.summary)}</div>`;
+  }
+
+  const priorities = d.priorities || [];
+  if(priorities.length){
+    html += `<div class="ai-priorities">` + priorities.map((p,i)=>`
+      <div class="ai-card ${impCls(p.impact_level)}">
+        <div class="ai-card-head">
+          <span class="ai-card-num">${i+1}</span>
+          <span class="ai-card-title">${escHtml(p.title||'')}</span>
+          <span class="ai-badge-impact ${impCls(p.impact_level)}">${escHtml(p.impact_estimate||impLabel(p.impact_level))}</span>
+        </div>
+        <div class="ai-card-body">
+          <div><b>Что делать:</b> ${escHtml(p.what_to_do||'')}</div>
+          <div><b>Почему сейчас:</b> ${escHtml(p.why_now||'')}</div>
+          <div><b>Затронуто:</b> ${escHtml(p.affected||'')}</div>
+          <div><b>Срок:</b> ${escHtml(p.timeline||'')}</div>
+        </div>
+      </div>`).join('') + `</div>`;
+  }
+
+  const skuActions = d.sku_actions || [];
+  if(skuActions.length){
+    html += `<div class="ai-sku-section">
+      <div class="ai-sku-title">По артикулам (${skuActions.length})</div>
+      <div style="overflow-x:auto">
+      <table class="ai-sku-table"><thead><tr>
+        <th>Артикул</th><th>Бренд</th><th>Ветка</th><th>Суть</th><th>Действие</th>
+      </tr></thead><tbody>` +
+      skuActions.map(s=>`
+        <tr>
+          <td style="white-space:nowrap">${escHtml(s.kod||'—')}${kLink(s.name||'',s.brand||'',true,s.vetka||'',s.kod||'')}</td>
+          <td>${escHtml(s.brand||'—')}</td>
+          <td style="white-space:nowrap">${escHtml(s.vetka||'—')}</td>
+          <td><span class="ai-urg-dot ${impCls(s.urgency)}"></span>${escHtml(s.issue||'')}</td>
+          <td>${escHtml(s.action||'')}</td>
+        </tr>`).join('') +
+      `</tbody></table></div></div>`;
+  }
+
+  if(!priorities.length && !skuActions.length && !d.summary){
+    html += `<div style="color:var(--muted);font-size:13px">Нет данных для стратегии по этому срезу.</div>`;
+  }
+
+  return html;
+}
+
 async function genAI(ctx){
   // ctx='tc' for Tactics tab, undefined for Settings
   const btnId = ctx==='tc' ? 'ai-btn-tc' : 'ai-btn';
   const boxId = ctx==='tc' ? 'ai-r-tc'   : 'ai-r';
-  const doneLabel = ctx==='tc' ? '<i class="ti ti-sparkles"></i>Сгенерировать' : '<i class="ti ti-robot"></i>Определить приоритеты';
+  const vetkaSelId = ctx==='tc' ? 'ai-vetka-sel-tc' : 'ai-vetka-sel';
+  const queryId = ctx==='tc' ? 'ai-query-tc' : 'ai-query';
+  const doneLabel = ctx==='tc' ? '<i class="ti ti-sparkles"></i>Определить приоритеты' : '<i class="ti ti-robot"></i>Определить приоритеты';
   const btn=g(btnId);const box=g(boxId);
   if(!btn||!box)return;
 
@@ -3697,41 +3824,48 @@ async function genAI(ctx){
     return;
   }
 
-  const cacheKey = `ai_${DA[A.dept]}_${A.month||'all'}_${A.sub||''}`;
+  const vetka = (g(vetkaSelId)||{}).value || '';
+  const query = ((g(queryId)||{}).value || '').trim();
+  const cacheKey = `ai_${DA[A.dept]}_${A.month||'all'}_${A.sub||''}_${vetka}_${query.slice(0,60)}`;
 
   btn.disabled=true;btn.innerHTML='<div class="spin" style="width:14px;height:14px;border-width:2px"></div>Генерирую...';box.innerHTML='';
   try{
     const p=new URLSearchParams({department:DA[A.dept]});
-    if(A.month)p.set('month',A.month);if(A.sub)p.set('subtype',A.sub);
+    if(A.month)p.set('month',A.month);if(A.sub)p.set('subtype',A.sub);if(vetka)p.set('vetka',vetka);
     const r=await fetch(API+'/ai/report?'+p,{
       method:'POST',
-      headers:{'x-admin-token':_adminToken}
+      headers:{'x-admin-token':_adminToken,'Content-Type':'application/json'},
+      body: JSON.stringify({user_query: query || null})
     });
     if(r.status===403){_adminToken=null;sessionStorage.removeItem('_kaspiAdmAuth');toast('Сессия истекла — войдите снова','error');btn.disabled=false;btn.innerHTML=doneLabel;return;}
     if(!r.ok) throw new Error(await r.text());
     const d=await r.json();
-    const html=`<div class="ai-box">${(d.report||'').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>')}</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:8px">Токенов: ${fmtN(d.tokens_used)}</div>`;
-    box.innerHTML=html;
-    // Cache in sessionStorage so switching tabs doesn't lose the report
-    try{sessionStorage.setItem(cacheKey, JSON.stringify({html, ts: Date.now()}));}catch{}
-  }catch(e){box.innerHTML=`<div style="color:var(--red);font-size:13px">Ошибка: ${e.message}</div>`;}
+    box.innerHTML = renderAIStrategy(d) +
+      `<div style="font-size:11px;color:var(--muted);margin-top:10px">Токенов: ${fmtN(d.tokens_used)}</div>`;
+    // Cache the raw JSON (not pre-rendered HTML) so re-renders always use the latest template
+    try{sessionStorage.setItem(cacheKey, JSON.stringify({data:d, ts: Date.now()}));}catch{}
+  }catch(e){box.innerHTML=`<div style="color:var(--red);font-size:13px">Ошибка: ${escHtml(e.message)}</div>`;}
   btn.disabled=false;btn.innerHTML=doneLabel;
 }
 
 function _loadCachedAI(ctx){
   const boxId = ctx==='tc' ? 'ai-r-tc' : 'ai-r';
   const box=g(boxId);if(!box)return;
-  const cacheKey = `ai_${DA[A.dept]}_${A.month||'all'}_${A.sub||''}`;
+  const vetkaSelId = ctx==='tc' ? 'ai-vetka-sel-tc' : 'ai-vetka-sel';
+  const queryId = ctx==='tc' ? 'ai-query-tc' : 'ai-query';
+  const vetka = (g(vetkaSelId)||{}).value || '';
+  const query = ((g(queryId)||{}).value || '').trim();
+  const cacheKey = `ai_${DA[A.dept]}_${A.month||'all'}_${A.sub||''}_${vetka}_${query.slice(0,60)}`;
   try{
     const raw=sessionStorage.getItem(cacheKey);
     if(!raw)return;
-    const {html,ts}=JSON.parse(raw);
+    const {data,ts}=JSON.parse(raw);
     // Cache valid for 30 minutes
     if(Date.now()-ts < 30*60*1000){
       const minsAgo=Math.round((Date.now()-ts)/60000);
       const timeLabel=minsAgo<1?'только что':minsAgo===1?'1 мин. назад':minsAgo+' мин. назад';
-      box.innerHTML=html+`<div style="font-size:11px;color:var(--muted);margin-top:8px;display:flex;align-items:center;gap:8px"><i class="ti ti-database" style="font-size:12px"></i>Из кеша · ${timeLabel} · <button onclick="genAI('${ctx||''}')" style="background:none;border:none;color:var(--ice);cursor:pointer;font-size:11px;padding:0;text-decoration:underline">Обновить</button></div>`;
+      box.innerHTML = renderAIStrategy(data) +
+        `<div style="font-size:11px;color:var(--muted);margin-top:10px;display:flex;align-items:center;gap:8px"><i class="ti ti-database" style="font-size:12px"></i>Из кеша · ${timeLabel} · <button onclick="genAI('${ctx||''}')" style="background:none;border:none;color:var(--ice);cursor:pointer;font-size:11px;padding:0;text-decoration:underline">Обновить</button></div>`;
     }
   }catch{}
 }

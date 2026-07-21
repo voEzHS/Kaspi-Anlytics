@@ -1,10 +1,11 @@
-"""AI report generation via Anthropic Claude API."""
+"""AI strategy generation via Anthropic Claude API."""
 import asyncio
 import os
 from typing import Optional
 
 import anthropic
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -279,39 +280,112 @@ OUCBOLL, POLAIR:
 — Тревожишься когда доля падает или конкурент растёт
 — Всегда даёшь конкретное следующее действие, не "подумать над стратегией"
 
-СТРУКТУРА ОТВЕТА:
-— Используй эмодзи как заголовки секций для читаемости
-— Конкретные числа всегда: не "выросла выручка" а "+12.3 млн ₸ (+8.2%)"
-— Называй конкретные ветки: "в ветке 500-600л мы на 3%" не "в средних ветках"
-— Называй конкретных конкурентов: "БИРЮСА забирает 42%" не "конкуренты"
-— Приоритизируй: топ-3 действия прямо сейчас, с оценкой эффекта в тенге
-
 ВАЖНО:
 — Пишешь только на русском языке
 — Используешь деловой но живой тон, как на планёрке с командой
 — Не пишешь "рекомендую рассмотреть возможность" — пишешь "делаем это на следующей неделе"
+— Конкретные числа всегда: не "выросла выручка" а "+12.3 млн ₸ (+8.2%)"
+— Называй конкретные ветки, бренды, артикулы — никогда абстрактно
 
 ════════════════════════════════════════════════════════
 🎯 ГЛАВНОЕ: ТЫ ДЕЛАЕШЬ НЕ ОТЧЁТ, А СТРАТЕГИЮ ДЕЙСТВИЙ
 ════════════════════════════════════════════════════════
 
-Это не описательная аналитика "что происходит на рынке". Директор и так видит цифры
-в таблицах на сайте. Твоя задача — сказать, ЧТО ДЕЛАТЬ, в каком порядке, и почему именно так.
+Директор и так видит цифры в таблицах на сайте. Твоя задача — сказать, ЧТО ДЕЛАТЬ,
+в каком порядке, и почему именно так. Ты отвечаешь СТРУКТУРИРОВАННО через инструмент
+strategy_output — не текстом, а тремя полями: summary, priorities, sku_actions.
 
-Каждый твой ответ — это ПРИОРИТИЗИРОВАННЫЙ СПИСОК ДЕЙСТВИЙ. Не более 5 пунктов.
-Ранжируй строго по потенциальному эффекту в тенге или по риску потери денег.
-Если пунктов, достойных внимания, меньше 5 — не добавляй "воду", дай 2-3 но сильных.
+ЕСЛИ ПОЛЬЗОВАТЕЛЬ ЗАДАЛ СВОЙ ВОПРОС:
+Отвечай на него прямо и по существу в поле summary — это главный приоритет. Не увиливай
+общими фразами. Priorities и sku_actions должны быть заточены под этот вопрос, а не быть
+общим обзором всей категории.
 
-Для КАЖДОГО приоритета обязательно:
-1. Что именно делать — конкретное действие (не "улучшить", а "собрать 15 отзывов на SKU X")
-2. Почему это приоритет — цифра/факт который это доказывает
-3. Ожидаемый эффект — оценка в тенге или % доли, и срок
-4. Кто/что затронуто — конкретные ветки, SKU, бренды
+ПРИОРИТЕТЫ (priorities):
+От 2 до 5 штук, не больше. Ранжируй строго по потенциальному эффекту в тенге или риску
+потери денег. Каждый — это конкретное действие с обоснованием цифрой, не общие слова.
 
-Общий контекст рынка (доля, тренды, конкуренты) — используешь только как ОБОСНОВАНИЕ
-для приоритетов, а не как отдельный блок отчёта. Никаких общих разделов "Позиция компании"
-без привязки к конкретному действию.
+АРТИКУЛЫ (sku_actions):
+Тебе передан список конкретных наших артикулов (KOD, название, бренд, ветка, метрики).
+Для КАЖДОГО артикула из этого списка дай конкретное действие — даже если артикул в порядке,
+напиши короткое "issue" (например "всё в порядке, рейтинг высокий") и "action" (например
+"держать курс, ничего не менять"). Не пропускай артикулы. Если список длинный (>25),
+можешь сгруппировать явно похожие по проблеме артикулы одной строкой (например перечислив
+несколько kod через запятую в поле kod), но старайся давать индивидуальные рекомендации.
 """
+
+
+class AIQueryPayload(BaseModel):
+    user_query: Optional[str] = None
+
+
+# Tool schema used to force Claude to return structured JSON instead of free text —
+# this lets the frontend render proper cards/tables instead of a wall of text.
+STRATEGY_TOOL = {
+    "name": "strategy_output",
+    "description": (
+        "Структурированная стратегия действий для TorgStore: краткий ответ/summary, "
+        "ранжированные приоритеты и конкретное действие по каждому артикулу."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "summary": {
+                "type": "string",
+                "description": (
+                    "2-4 предложения. Если пользователь задал вопрос — прямой ответ на него. "
+                    "Иначе — общая оценка ситуации по выбранному срезу (категория/подтип/ветка)."
+                ),
+            },
+            "priorities": {
+                "type": "array",
+                "description": "Ранжированный список приоритетных действий, от 2 до 5 штук.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Заголовок действия одной строкой"},
+                        "impact_estimate": {
+                            "type": "string",
+                            "description": "Оценка эффекта коротко, например '+2.1 млн ₸/мес' или 'риск -5% доли'",
+                        },
+                        "impact_level": {"type": "string", "enum": ["high", "medium", "low"]},
+                        "what_to_do": {"type": "string", "description": "Конкретный шаг"},
+                        "why_now": {"type": "string", "description": "Цифра/факт-обоснование из данных"},
+                        "affected": {"type": "string", "description": "Конкретные ветки/бренды/артикулы"},
+                        "timeline": {"type": "string", "description": "Срок ожидаемого эффекта"},
+                    },
+                    "required": [
+                        "title", "impact_estimate", "impact_level",
+                        "what_to_do", "why_now", "affected", "timeline",
+                    ],
+                },
+            },
+            "sku_actions": {
+                "type": "array",
+                "description": (
+                    "Конкретное действие по каждому артикулу из переданного списка "
+                    "«НАШИ АРТИКУЛЫ В ЭТОМ СРЕЗЕ». Не пропускай артикулы."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kod": {"type": "string"},
+                        "name": {"type": "string"},
+                        "brand": {"type": "string"},
+                        "vetka": {"type": "string"},
+                        "issue": {
+                            "type": "string",
+                            "description": "Суть/проблема коротко, например '0 отзывов' или 'всё в порядке'",
+                        },
+                        "action": {"type": "string", "description": "Конкретное действие по артикулу"},
+                        "urgency": {"type": "string", "enum": ["high", "medium", "low"]},
+                    },
+                    "required": ["kod", "name", "brand", "vetka", "issue", "action", "urgency"],
+                },
+            },
+        },
+        "required": ["summary", "priorities", "sku_actions"],
+    },
+}
 
 
 async def _get_our_brands(db: AsyncSession) -> set[str]:
@@ -322,11 +396,22 @@ async def _get_our_brands(db: AsyncSession) -> set[str]:
     return _MANDATORY_BRANDS
 
 
+def _fmt_rev(v) -> str:
+    v = v or 0
+    if v >= 1_000_000:
+        return f"{v/1_000_000:.1f} млн ₸"
+    if v >= 1_000:
+        return f"{v/1_000:.0f} тыс ₸"
+    return f"{v:.0f} ₸"
+
+
 @router.post("/report")
 async def generate_report(
     department: str = Query(..., description="freezers | refrigerated"),
     month: Optional[str] = Query(None),
     subtype: Optional[str] = Query(None),
+    vetka: Optional[str] = Query(None),
+    payload: AIQueryPayload = Body(default_factory=AIQueryPayload),
     db: AsyncSession = Depends(get_db),
     _: None = Depends(require_admin),
 ):
@@ -334,12 +419,16 @@ async def generate_report(
     if not api_key:
         raise HTTPException(503, "ANTHROPIC_API_KEY not configured")
 
+    user_query = (payload.user_query or "").strip()[:1000]  # cap length defensively
+
     dept = DeptEnum[department]
     q = select(KaspiRow).where(KaspiRow.department == dept)
     if month:
         q = q.where(KaspiRow.month == month)
     if subtype:
         q = q.where(KaspiRow.tip == subtype)
+    if vetka:
+        q = q.where(KaspiRow.vetka == vetka)
     result = await db.execute(q)
     rows = result.scalars().all()
 
@@ -363,16 +452,31 @@ async def generate_report(
         overview = engine.calc_overview(row_dicts, our_brands)
         brands = engine.calc_brands(row_dicts, our_brands)
         vetka_data = engine.calc_vetka(row_dicts, our_brands)
-        subtype_compare = engine.calc_subtype_compare(row_dicts, our_brands) if department == "freezers" and not subtype else []
+        subtype_compare = (
+            engine.calc_subtype_compare(row_dicts, our_brands)
+            if department == "freezers" and not subtype else []
+        )
         strategy = engine.calc_strategy(row_dicts, our_brands)
         rrc_data = engine.calc_rrc_analytics(row_dicts, our_brands)
+
+        # ── Per-SKU list for the selected scope (our brands only) ──────────
+        our_rows = [r for r in row_dicts if r["brand"].upper() in our_brands]
+        our_sku_map = engine.dedup_skus(our_rows)
+        our_sku_list = sorted(
+            our_sku_map.values(),
+            key=lambda s: -(s.get("_revenue_sum") or s.get("revenue") or 0),
+        )
+        total_our_skus = len(our_sku_list)
+        truncated = total_our_skus > 60
+        our_sku_list = our_sku_list[:60]
     except Exception as e:
         raise HTTPException(500, f"Ошибка подготовки данных ({type(e).__name__}): {e}")
 
     our_brands_list = ", ".join(sorted(our_brands))
     dept_label = DEPT_LABELS.get(department, department)
     period = f"{month}" if month else "все месяцы в базе"
-    sub_label = f" · только {subtype}" if subtype else ""
+    sub_label = f" · {subtype}" if subtype else ""
+    vetka_label = f" · ветка {vetka}л" if vetka else ""
 
     try:
         # ── Market overview ──────────────────────────────────────
@@ -412,15 +516,32 @@ async def generate_report(
         low_rating = strategy.get('low_rating_skus', [])[:5]
         priority_actions = strategy.get('priority_actions', [])
 
-        def fmt_rev(v) -> str:
-            v = v or 0
-            if v >= 1_000_000:
-                return f"{v/1_000_000:.1f} млн ₸"
-            if v >= 1_000:
-                return f"{v/1_000:.0f} тыс ₸"
-            return f"{v:.0f} ₸"
+        # ── Per-SKU block text ───────────────────────────────────
+        def sku_line(s: dict) -> str:
+            rev = s.get('_revenue_sum', s.get('revenue') or 0)
+            units = s.get('_units_sum', s.get('units') or 0)
+            return (
+                f"  {s.get('kod') or '—'} | {s.get('brand','')} | {(s.get('name') or '')[:45]} | "
+                f"{s.get('tip') or '—'} {s.get('vetka') or '—'} | {_fmt_rev(rev)} | {units:.0f} шт | "
+                f"ABC:{s.get('abc') or '?'} | ★{s.get('rating') or 0:.1f} ({s.get('reviews') or 0} отз.) | "
+                f"РРЦ {_fmt_rev(s.get('rrc'))} | {s.get('sellers') or 0} прод."
+            )
 
-        prompt = f"""Определи ТОП-приоритеты действий по категории: **{dept_label}{sub_label}**
+        sku_block = "\n".join(sku_line(s) for s in our_sku_list) or "  — наших артикулов в этом срезе нет"
+        sku_header = f"📦 НАШИ АРТИКУЛЫ В ЭТОМ СРЕЗЕ ({len(our_sku_list)}{' из ' + str(total_our_skus) if truncated else ''} шт)"
+        truncation_note = (
+            "\n(Показаны топ-60 по выручке — сузь фильтр по ветке/подтипу для полного списка.)"
+            if truncated else ""
+        )
+
+        user_query_block = (
+            f"══════════════════════════════════════\n"
+            f"❓ ВОПРОС ПОЛЬЗОВАТЕЛЯ (ответь на него в первую очередь в summary)\n"
+            f"══════════════════════════════════════\n{user_query}\n"
+            if user_query else ""
+        )
+
+        prompt = f"""{user_query_block}Категория: **{dept_label}{sub_label}{vetka_label}**
 Период анализа: **{period}**
 Наши бренды: {our_brands_list}
 
@@ -429,23 +550,23 @@ async def generate_report(
 ══════════════════════════════════════
 
 ОБЩИЕ ПОКАЗАТЕЛИ:
-• Рынок: {fmt_rev(total_rev)} | Наша выручка: {fmt_rev(our_rev)} | Доля: {our_share:.1f}%
+• Рынок: {_fmt_rev(total_rev)} | Наша выручка: {_fmt_rev(our_rev)} | Доля: {our_share:.1f}%
 • Всего SKU на рынке: {overview.get('unique_products', 0)} | Брендов: {overview.get('unique_brands', 0)}
 • Наших SKU: {our_sku} | Наших ABC-A: {our_abc_a} | Наш рейтинг: {our_rating:.2f}
 
 НАШИ БРЕНДЫ (по выручке):
-{chr(10).join(f"  • {b['brand']}: {fmt_rev(b['revenue'])} ({b['market_share_pct']:.1f}% рынка, {b.get('skus', 0)} SKU, рейтинг {b.get('avg_rating', 0):.1f})" for b in our_brand_rows) or "  — нет данных"}
+{chr(10).join(f"  • {b['brand']}: {_fmt_rev(b['revenue'])} ({b['market_share_pct']:.1f}% рынка, {b.get('skus', 0)} SKU, рейтинг {b.get('avg_rating', 0):.1f})" for b in our_brand_rows) or "  — нет данных"}
 
 ТОП КОНКУРЕНТОВ:
-{chr(10).join(f"  • {b['brand']}: {fmt_rev(b['revenue'])} ({b['market_share_pct']:.1f}%)" for b in comp_brand_rows) or "  — нет данных"}
+{chr(10).join(f"  • {b['brand']}: {_fmt_rev(b['revenue'])} ({b['market_share_pct']:.1f}%)" for b in comp_brand_rows) or "  — нет данных"}
 
 ВЕТКИ — НАША СИЛА (доля ≥20%):
-{chr(10).join(f"  ✅ {v['vetka']}: рынок {fmt_rev(v['revenue'])}, наша доля {v['our_share_pct']:.1f}%, наша выручка {fmt_rev(v['our_revenue'])}" for v in vetka_strengths) or "  — нигде нет доминирующей позиции"}
+{chr(10).join(f"  ✅ {v['vetka']}: рынок {_fmt_rev(v['revenue'])}, наша доля {v['our_share_pct']:.1f}%, наша выручка {_fmt_rev(v['our_revenue'])}" for v in vetka_strengths) or "  — нигде нет доминирующей позиции"}
 
 ВЕТКИ — ВОЗМОЖНОСТИ (рынок >5%, наша доля <10%):
-{chr(10).join(f"  ⚠️ {v['vetka']}: рынок {fmt_rev(v['revenue'])}, мы там на {v['our_share_pct']:.1f}% — лидер: {v.get('leader_brand') or '?'}" for v in vetka_opportunities) or "  — нет явных упущенных сегментов"}
+{chr(10).join(f"  ⚠️ {v['vetka']}: рынок {_fmt_rev(v['revenue'])}, мы там на {v['our_share_pct']:.1f}% — лидер: {v.get('leader_brand') or '?'}" for v in vetka_opportunities) or "  — нет явных упущенных сегментов"}
 
-{("СРАВНЕНИЕ ПОДТИПОВ:" + chr(10) + chr(10).join(f"  • {s['subtype']}: рынок {fmt_rev(s['revenue'])} ({s['market_share_pct']:.1f}%), мы {s['our_share_pct']:.1f}%" for s in subtype_compare)) if subtype_compare else ""}
+{("СРАВНЕНИЕ ПОДТИПОВ:" + chr(10) + chr(10).join(f"  • {s['subtype']}: рынок {_fmt_rev(s['revenue'])} ({s['market_share_pct']:.1f}%), мы {s['our_share_pct']:.1f}%" for s in subtype_compare)) if subtype_compare else ""}
 
 ══════════════════════════════════════
 💰 ЦЕНОВАЯ ПОЗИЦИЯ (РРЦ)
@@ -453,19 +574,19 @@ async def generate_report(
 Ниже рынка ({len(rrc_below)} веток): {', '.join(r['vetka'] for r in rrc_below[:4]) or '—'}
 В рынке ({len(rrc_in)} веток): {', '.join(r['vetka'] for r in rrc_in[:4]) or '—'}
 Выше рынка ({len(rrc_above)} веток): {', '.join(r['vetka'] for r in rrc_above[:4]) or '—'}
-{chr(10).join(f"  Ветка {r['vetka']}: рынок РРЦ {fmt_rev(r.get('market_avg_rrc'))}, наш РРЦ {fmt_rev(r.get('our_avg_rrc'))} ({(r.get('position_pct') or 0):+.0f}%)" for r in rrc_by_vetka[:6]) if rrc_by_vetka else "  — нет данных по РРЦ"}
+{chr(10).join(f"  Ветка {r['vetka']}: рынок РРЦ {_fmt_rev(r.get('market_avg_rrc'))}, наш РРЦ {_fmt_rev(r.get('our_avg_rrc'))} ({(r.get('position_pct') or 0):+.0f}%)" for r in rrc_by_vetka[:6]) if rrc_by_vetka else "  — нет данных по РРЦ"}
 
 ══════════════════════════════════════
 🔍 СТРАТЕГИЧЕСКИЕ СИГНАЛЫ
 ══════════════════════════════════════
 НАШИ ТОВАРЫ БЕЗ ОТЗЫВОВ ({review_deficit_data.get('no_reviews_count', 0)} SKU):
-{chr(10).join(f"  • {r.get('name','')[:55]} [{r.get('brand','')}] — выручка {fmt_rev(r.get('revenue',0))}, ABC: {r.get('abc','?')}" for r in no_reviews_skus) or "  — все товары с отзывами, отлично!"}
+{chr(10).join(f"  • {r.get('name','')[:55]} [{r.get('brand','')}] — выручка {_fmt_rev(r.get('revenue',0))}, ABC: {r.get('abc','?')}" for r in no_reviews_skus) or "  — все товары с отзывами, отлично!"}
 
 НАШИ ТОВАРЫ С 1–4 ОТЗЫВАМИ ({review_deficit_data.get('few_reviews_count', 0)} SKU):
 {chr(10).join(f"  • {r.get('name','')[:55]} — {r.get('reviews',0)} отз., рейтинг {r.get('rating',0):.1f}" for r in few_reviews_skus) or "  — нет"}
 
 СЕГМЕНТЫ БЕЗ НАШЕГО ПРИСУТСТВИЯ (рынок >30 млн, наша доля <10%):
-{chr(10).join(f"  ⚠️ Ветка {g.get('vetka','?')}: рынок {fmt_rev(g.get('market_revenue',0))}, наша доля {g.get('our_share_pct',0):.1f}%, лидер: {g.get('leader_brand','?')}" for g in gaps) or "  — нет значимых упущенных сегментов"}
+{chr(10).join(f"  ⚠️ Ветка {g.get('vetka','?')}: рынок {_fmt_rev(g.get('market_revenue',0))}, наша доля {g.get('our_share_pct',0):.1f}%, лидер: {g.get('leader_brand','?')}" for g in gaps) or "  — нет значимых упущенных сегментов"}
 
 НИЗКИЙ РЕЙТИНГ (наши товары <4.5):
 {chr(10).join(f"  ❗ {r.get('name','')[:55]} [{r.get('brand','')}] — рейтинг {r.get('rating',0):.1f} ({r.get('reviews',0)} отз.)" for r in low_rating) or "  — все наши товары с нормальным рейтингом"}
@@ -474,23 +595,19 @@ async def generate_report(
 {chr(10).join(f"  {i+1}. {a.get('title','')} [{(a.get('impact') or '').upper()}] — {a.get('description','')[:100]}" for i,a in enumerate(priority_actions)) or "  — нет критических действий"}
 
 ══════════════════════════════════════
+{sku_header}
+══════════════════════════════════════
+{sku_block}{truncation_note}
+
+══════════════════════════════════════
 ЗАДАНИЕ
 ══════════════════════════════════════
-Не пиши общий отчёт. Дай СТРАТЕГИЮ — ранжированный список из 3-5 приоритетов,
-что делать прямо сейчас, чтобы заработать или не потерять деньги.
+Заполни strategy_output:
+1. summary — {"прямой ответ на вопрос пользователя выше" if user_query else "короткая оценка ситуации по этому срезу (2-4 предложения)"}
+2. priorities — 2-5 ранжированных приоритетных действий с обоснованием цифрой
+3. sku_actions — конкретное действие по каждому артикулу из блока «{sku_header}» выше
 
-Формат для КАЖДОГО приоритета:
-
-**[Номер]. [Заголовок действия одной строкой]** — [оценка эффекта в ₸ или %]
-📌 Что делать: [конкретный шаг]
-📊 Почему сейчас: [цифра/факт из данных выше]
-🎯 Затронуто: [конкретные ветки/бренды/SKU]
-⏱ Срок: [когда ждать эффект]
-
-В конце — одна строка **Если делать только одно** — какой из приоритетов важнее всех остальных
-и почему, если ресурсов хватает только на одно действие.
-
-Используй только данные выше. Называй конкретные ветки, бренды, суммы. Никакой воды и общих фраз."""
+Используй только данные выше. Называй конкретные ветки, бренды, суммы, артикулы. Никакой воды."""
     except HTTPException:
         raise
     except Exception as e:
@@ -501,8 +618,10 @@ async def generate_report(
         message = await asyncio.to_thread(
             client.messages.create,
             model="claude-opus-4-8",
-            max_tokens=2000,
+            max_tokens=4096,
             system=SYSTEM_PROMPT,
+            tools=[STRATEGY_TOOL],
+            tool_choice={"type": "tool", "name": "strategy_output"},
             messages=[{"role": "user", "content": prompt}],
         )
     except Exception as e:
@@ -519,12 +638,32 @@ async def generate_report(
                 api_msg = err.get("message")
         detail = api_msg or getattr(e, "message", None) or str(e) or type(e).__name__
         code = status_code if isinstance(status_code, int) and 400 <= status_code < 600 else 500
-        raise HTTPException(code, f"Ошибка генерации приоритетов ({type(e).__name__}): {detail}")
+        raise HTTPException(code, f"Ошибка генерации стратегии ({type(e).__name__}): {detail}")
+
+    # Parse the forced tool-use response into structured data.
+    strategy_data = None
+    for block in getattr(message, "content", []) or []:
+        if getattr(block, "type", None) == "tool_use":
+            strategy_data = block.input
+            break
+
+    if strategy_data is None:
+        # Fallback — should not normally happen with tool_choice forced, but never crash.
+        fallback_text = ""
+        for block in getattr(message, "content", []) or []:
+            if getattr(block, "type", None) == "text":
+                fallback_text = block.text
+                break
+        strategy_data = {"summary": fallback_text or "Не удалось получить структурированный ответ.", "priorities": [], "sku_actions": []}
 
     return {
         "department": department,
         "month": month,
         "subtype": subtype,
-        "report": message.content[0].text,
+        "vetka": vetka,
+        "user_query": user_query or None,
+        "summary": strategy_data.get("summary", ""),
+        "priorities": strategy_data.get("priorities", []),
+        "sku_actions": strategy_data.get("sku_actions", []),
         "tokens_used": message.usage.output_tokens,
     }
