@@ -496,8 +496,8 @@ async def generate_report(
     except Exception as e:
         raise HTTPException(500, f"Ошибка построения промпта ({type(e).__name__}): {e}")
 
-    client = anthropic.Anthropic(api_key=api_key)
     try:
+        client = anthropic.Anthropic(api_key=api_key)
         message = await asyncio.to_thread(
             client.messages.create,
             model="claude-opus-4-8",
