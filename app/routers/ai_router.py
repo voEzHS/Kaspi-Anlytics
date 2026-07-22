@@ -421,33 +421,40 @@ async def generate_report(
 
     user_query = (payload.user_query or "").strip()[:1000]  # cap length defensively
 
-    dept = DeptEnum[department]
-    q = select(KaspiRow).where(KaspiRow.department == dept)
-    if month:
-        q = q.where(KaspiRow.month == month)
-    if subtype:
-        q = q.where(KaspiRow.tip == subtype)
-    if vetka:
-        q = q.where(KaspiRow.vetka == vetka)
-    result = await db.execute(q)
-    rows = result.scalars().all()
+    # Wrapped broadly: any unexpected data shape here would otherwise surface as a
+    # bare, undiagnosable "Internal Server Error" — this gives us the real cause.
+    try:
+        dept = DeptEnum[department]
+        q = select(KaspiRow).where(KaspiRow.department == dept)
+        if month:
+            q = q.where(KaspiRow.month == month)
+        if subtype:
+            q = q.where(KaspiRow.tip == subtype)
+        if vetka:
+            q = q.where(KaspiRow.vetka == vetka)
+        result = await db.execute(q)
+        rows = result.scalars().all()
+    except KeyError as e:
+        raise HTTPException(400, f"Неизвестный отдел: {e}")
+    except Exception as e:
+        raise HTTPException(500, f"Ошибка запроса к базе ({type(e).__name__}): {e}")
 
     if not rows:
         raise HTTPException(404, "No data found for selected filters")
 
-    our_brands = await _get_our_brands(db)
-    row_dicts = engine.apply_business_rules([
-        {"brand": r.brand or "", "tip": r.tip, "vetka": r.vetka, "revenue": r.revenue or 0,
-         "units": r.units or 0, "abc": r.abc, "rating": r.rating or 0,
-         "reviews": r.reviews or 0, "sellers": r.sellers or 0, "month": r.month,
-         "kod": r.kod or "", "name": r.name or "", "rrc": r.rrc or 0,
-         "volume": r.volume}
-        for r in rows
-    ])
+    try:
+        our_brands = await _get_our_brands(db)
+        row_dicts = engine.apply_business_rules([
+            {"brand": r.brand or "", "tip": r.tip, "vetka": r.vetka, "revenue": r.revenue or 0,
+             "units": r.units or 0, "abc": r.abc, "rating": r.rating or 0,
+             "reviews": r.reviews or 0, "sellers": r.sellers or 0, "month": r.month,
+             "kod": r.kod or "", "name": r.name or "", "rrc": r.rrc or 0,
+             "volume": r.volume}
+            for r in rows
+        ])
+    except Exception as e:
+        raise HTTPException(500, f"Ошибка подготовки брендов/строк ({type(e).__name__}): {e}")
 
-    # Gather all analytics data for rich context.
-    # Wrapped broadly: any unexpected data shape here would otherwise surface as a
-    # bare, undiagnosable "Internal Server Error" — this gives us the real cause.
     try:
         overview = engine.calc_overview(row_dicts, our_brands)
         brands = engine.calc_brands(row_dicts, our_brands)

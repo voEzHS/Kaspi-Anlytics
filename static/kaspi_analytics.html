@@ -1,37 +1,53 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-dept="frz">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Kaspi Analytics — TorgStore</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
 :root{
-  --bg:#0D1117;--s1:#161B22;--s2:#1C2333;--s3:#21262D;
-  --border:#30363D;--text:#E6EDF3;--muted:#9DA5B0;
+  --bg:#09090B;--s1:#131316;--s2:#1B1B1F;--s3:#232328;
+  --border:#2A2A30;--text:#F2F2F5;--muted:#8B8B93;
   --ice:#60B8D4;--ice-dim:rgba(96,184,212,.15);
   --green:#3FB950;--green-dim:rgba(63,185,80,.15);
-  --blue:#2F81F7;--blue-dim:rgba(47,129,247,.15);
+  --blue:#6366F1;--blue-dim:rgba(99,102,241,.15);
   --yellow:#D29922;--yellow-dim:rgba(210,153,34,.15);
   --red:#F85149;--red-dim:rgba(248,81,73,.15);
   --purple:#A371F7;
-  /* ВИЗ-02: --accent was identical alias for --blue (#2F81F7) — removed */
+  /* ВИЗ-02: --accent was identical alias for --blue (#6366F1) — removed */
   --color-ours:#79C0FF; /* "наши бренды" — отдельный от цвета отдела */
   --color-positive:var(--green);
-  --sw:240px;--r:10px;
+  --sw:248px;--r:10px;--r-lg:16px;
   --shadow:0 2px 12px rgba(0,0,0,.3);
   --shadow-lg:0 8px 32px rgba(0,0,0,.4);
   /* Spacing scale */
   --sp-xs:4px;--sp-sm:8px;--sp-md:16px;--sp-lg:24px;--sp-xl:40px;
   /* Type scale: 12 / 14 / 18 / 28 */
   --fs-xs:12px;--fs-sm:14px;--fs-md:18px;--fs-lg:28px;
+  /* ── MOTION TOKENS (Emil Kowalski design-eng principles: strong custom
+     easing, never ease-in on UI, everything under ~300ms) ── */
+  --ease-out:cubic-bezier(0.23,1,0.32,1);
+  --ease-in-out:cubic-bezier(0.77,0,0.175,1);
+  --ease-drawer:cubic-bezier(0.32,0.72,0,1);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
 .layout{display:flex;height:100vh;overflow:hidden}
+
+/* ── DEPARTMENT ACCENT RETHEME — primary accent shifts with the selected
+   department so the whole shell (nav, buttons, hero numbers) feels distinct,
+   not just a pair of icons. Freezers = indigo/ice blend, Fridges = green. ── */
+:root[data-dept="ref"]{--blue:#22B573;--blue-dim:rgba(34,181,115,.15)}
+
+/* ── ACCENT DISPLAY FONT — hero KPI numbers only, Inter stays for everything else ── */
+.hero-num{font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-1.5px}
+/* StyleSeed §2 "Large Number + Small Unit" — unit stays legible but visually
+   subordinate to the number, roughly a 2:1 size ratio via em (scales with context) */
+.num-unit{font-size:.55em;font-weight:600;margin-left:3px;color:var(--muted);letter-spacing:0}
 
 /* ── SIDEBAR ─────────────────────────────────────────────────────────── */
 .sb{width:var(--sw);background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
@@ -42,31 +58,67 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .dot-st{width:6px;height:6px;border-radius:50%;background:var(--muted)}
 .dot-st.ok{background:var(--green)}.dot-st.err{background:var(--red)}
 
-.dept-sec{padding:14px 12px;border-bottom:1px solid var(--border)}
+.dept-sec{padding:14px 12px;border-bottom:1px solid var(--border);position:relative}
 .sl{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:8px;padding:0 8px;font-weight:600}
-.db{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r);cursor:pointer;font-size:13px;margin-bottom:4px;border:1px solid transparent;background:transparent;color:var(--muted);width:100%;text-align:left;transition:all .15s;font-weight:500}
+.db{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r);cursor:pointer;font-size:13px;margin-bottom:4px;border:1px solid transparent;background:transparent;color:var(--muted);width:100%;text-align:left;transition:color .15s var(--ease-out),transform .12s var(--ease-out);font-weight:500;position:relative;z-index:1}
+.db:active{transform:scale(.98)}
 .db:hover{background:var(--s2);color:var(--text)}
-.db.af{background:rgba(96,184,212,.1);color:var(--ice);border-color:rgba(96,184,212,.25)}
-.db.ar{background:rgba(63,185,80,.1);color:var(--green);border-color:rgba(63,185,80,.25)}
+.db.af{color:var(--ice)}
+.db.ar{color:var(--green)}
+/* ── SPRING-DRIVEN DEPARTMENT PILL — the colored highlight lives here, not on
+   the buttons, so switching departments reads as one pill physically sliding
+   and resizing between positions (Kowalski: springs for interruptible UI toggles) ── */
+.dept-indicator{position:absolute;left:0;top:0;width:0;height:0;border-radius:var(--r);background:rgba(96,184,212,.1);border:1px solid rgba(96,184,212,.25);z-index:0;pointer-events:none;will-change:transform,width;opacity:0}
+.dept-indicator.ready{opacity:1}
 .dd{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .dd-f{background:var(--ice)}.dd-r{background:var(--green)}
 .dc{margin-left:auto;font-size:11px;background:var(--s3);padding:2px 6px;border-radius:8px;font-weight:500}
 
 .nav-sec{padding:12px;flex:1}
 .nav-bottom{padding:12px;border-top:1px solid var(--border)}
-.nb{display:flex;align-items:center;gap:10px;padding:9px 10px 9px 12px;border-radius:var(--r);cursor:pointer;font-size:13px;margin-bottom:2px;border:none;background:transparent;color:var(--muted);width:100%;text-align:left;transition:all .15s;font-weight:500;position:relative}
+.nb{display:flex;align-items:center;gap:10px;padding:9px 10px 9px 12px;border-radius:8px;cursor:pointer;font-size:13px;margin-bottom:2px;border:none;background:transparent;color:var(--muted);width:100%;text-align:left;transition:background .15s var(--ease-out),color .15s var(--ease-out),transform .12s var(--ease-out);font-weight:500;position:relative}
+.nb:active{transform:scale(.97)}
 .nb:hover{background:var(--s2);color:var(--text)}
-.nb.active{background:rgba(47,129,247,.12);color:var(--blue)}
-.nb.active::before{content:'';position:absolute;left:0;top:6px;bottom:6px;width:3px;background:var(--blue);border-radius:0 3px 3px 0}
+.nb.active{background:var(--blue);color:#fff;font-weight:600}
+.nb.active i.nav-ic{color:#fff!important;background:rgba(255,255,255,.22)!important}
 .nb i{font-size:16px;flex-shrink:0;width:18px;text-align:center}
+.nb i.nav-ic{width:24px;height:24px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-size:14px;transition:background .15s,color .15s}
 
 .sub-sec{display:none!important}
+
+/* ── TOP NAV (desktop) — horizontal bar replaces the left sidebar.
+   Mobile (<=768px) keeps the existing off-canvas drawer behaviour below,
+   this block only applies above that breakpoint so nothing on mobile changes. ── */
+@media(min-width:769px){
+  .layout{flex-direction:column}
+  .sb{width:100%;height:56px;border-right:none;border-bottom:1px solid var(--border);flex-direction:row;align-items:center;overflow:visible;padding:0 16px;gap:16px}
+  .sb-logo{padding:0;border-bottom:none;flex-shrink:0}
+  .sb-logo .logo-s,.sb-logo .api-st{display:none} /* keep just the wordmark — status dot moves to topbar */
+  .dept-sec{padding:0;border-bottom:none;display:flex;align-items:center;gap:6px;flex-shrink:0}
+  .dept-sec .sl{display:none}
+  .db{margin-bottom:0;width:auto;padding:6px 10px;font-size:12px;white-space:nowrap}
+  .dept-sec .dc{display:none} /* month-count badge — not needed in the compact top bar */
+  .nav-sec{padding:0;flex:1;display:flex;align-items:center;gap:1px;overflow-x:auto;min-width:0;scrollbar-width:thin}
+  .nav-sec .sl{display:none}
+  .nb{width:auto;margin-bottom:0;white-space:nowrap;padding:8px 10px;font-size:12.5px}
+  .nav-bottom{padding:0;border-top:none;display:flex;align-items:center;gap:2px;flex-shrink:0}
+  .nav-bottom .sl{display:none}
+  .nav-bottom .nb-label{display:none} /* icon-only: Загрузка/Настройки used less often, saves room for main nav */
+  .nav-bottom .nb{padding:8px}
+  .last-upd{display:none!important}
+  .content{max-width:1520px}
+}
+@media(min-width:769px) and (max-width:1300px){
+  .nb{padding:7px 8px;font-size:12px}
+  .nb i{font-size:15px}
+}
 
 /* ── TYPE TAB BAR ──────────────────────────────────────────────────── */
 .type-bar{display:flex;align-items:center;gap:6px;padding:10px 24px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto}
 .type-bar::-webkit-scrollbar{height:3px}
 .type-bar::-webkit-scrollbar-thumb{background:var(--border)}
-.type-tab{padding:10px 14px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--s2);color:var(--muted);border-radius:20px;transition:all .15s;white-space:nowrap;display:flex;align-items:center;gap:5px;min-height:44px}
+.type-tab{padding:10px 14px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--s2);color:var(--muted);border-radius:20px;transition:background .15s var(--ease-out),color .15s var(--ease-out),border-color .15s var(--ease-out),transform .12s var(--ease-out);white-space:nowrap;display:flex;align-items:center;gap:5px;min-height:44px}
+.type-tab:active{transform:scale(.97)}
 .type-tab:hover{background:var(--s3);color:var(--text);border-color:var(--muted)}
 .type-tab.active-f{background:rgba(96,184,212,.15);color:var(--ice);border-color:rgba(96,184,212,.5)}
 .type-tab.active-r{background:rgba(63,185,80,.15);color:var(--green);border-color:rgba(63,185,80,.5)}
@@ -74,15 +126,16 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .type-bar-hide{display:none}
 
 .chips{display:flex;flex-wrap:wrap;gap:6px}
-.chip{padding:3px 10px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid var(--border);background:var(--s2);color:var(--muted);transition:all .15s}
+.chip{padding:3px 10px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid var(--border);background:var(--s2);color:var(--muted);transition:background .15s var(--ease-out),color .15s var(--ease-out),border-color .15s var(--ease-out),transform .12s var(--ease-out)}
+.chip:active{transform:scale(.96)}
 .chip:hover{border-color:var(--muted);color:var(--text)}
 .chip.cf{background:var(--ice-dim);border-color:var(--ice);color:var(--ice)}
 .chip.cr{background:var(--green-dim);border-color:var(--green);color:var(--green)}
 
 /* ── MAIN AREA ─────────────────────────────────────────────────────── */
-.main{flex:1;overflow-y:auto;display:flex;flex-direction:column;min-width:0}
+.main{flex:1;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;min-width:0}
 .topbar{background:var(--s1);border-bottom:1px solid var(--border);padding:0 24px;height:52px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10;flex-shrink:0}
-.tb-title{font-size:15px;font-weight:700;flex:1;letter-spacing:-.2px}
+.tb-title{font-size:17px;font-weight:700;flex:1;letter-spacing:-.4px}
 .tb-dept{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600}
 .tb-dept.df{background:rgba(96,184,212,.12);color:var(--ice);border:1px solid rgba(96,184,212,.35)}
 .tb-dept.dr{background:rgba(63,185,80,.12);color:var(--green);border:1px solid rgba(63,185,80,.35)}
@@ -93,10 +146,11 @@ input.inp{background:var(--s2);border:1px solid var(--border);color:var(--text);
 input.inp:focus{outline:none;border-color:var(--blue)}
 input.inp::placeholder{color:var(--muted)}
 
-.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--r);font-size:13px;font-family:inherit;cursor:pointer;border:none;transition:all .15s;font-weight:500}
-.btn-p{background:var(--blue);color:#fff}.btn-p:hover{background:#388bfd;box-shadow:0 0 0 3px rgba(47,129,247,.2)}
-.btn-g{background:var(--s2);color:var(--text);border:1px solid var(--border)}.btn-g:hover{background:var(--s3)}
-.btn-sm{padding:5px 10px;font-size:12px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-family:inherit;cursor:pointer;border:none;transition:background .16s var(--ease-out),box-shadow .16s var(--ease-out),border-color .16s var(--ease-out),transform .1s var(--ease-out);font-weight:600}
+.btn:active{transform:scale(.97)}
+.btn-p{background:var(--blue);color:#fff}.btn-p:hover{background:#7B7FF5;box-shadow:0 0 0 3px rgba(99,102,241,.25)}
+.btn-g{background:var(--s2);color:var(--text);border:1px solid var(--border)}.btn-g:hover{background:var(--s3);border-color:#3A3A42}
+.btn-sm{padding:6px 12px;font-size:12px}
 .btn-ice{background:rgba(96,184,212,.12);color:var(--ice);border:1px solid rgba(96,184,212,.4)}.btn-ice:hover{background:rgba(96,184,212,.25)}
 
 .content{padding:24px;flex:1;max-width:1440px;width:100%;margin:0 auto;align-self:flex-start}
@@ -109,10 +163,16 @@ input.inp::placeholder{color:var(--muted)}
 .spin{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 
-/* ── KPI CARDS ──────────────────────────────────────────────────────── */
-.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px;margin-bottom:24px}
-.kc{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:20px;position:relative;overflow:hidden;transition:box-shadow .15s}
-.kc:hover{box-shadow:var(--shadow-lg)}
+/* ── KPI CARDS — bento grid: hero spans 2 cols x 2 rows with a sparkline,
+   the rest fill in as small tiles around it ────────────────────────────── */
+.kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:minmax(96px,auto);gap:14px;margin-bottom:24px}
+.kc{background:var(--s1);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px;position:relative;overflow:hidden;transition:border-color .15s var(--ease-out),transform .15s var(--ease-out)}
+@media(hover:hover) and (pointer:fine){.kc:hover{border-color:#3A3A42;transform:translateY(-1px)}}
+.kpi-grid .kc.kc-featured{grid-column:span 2;grid-row:span 2;display:flex;flex-direction:column;justify-content:space-between}
+.kpi-grid .kc.kc-featured .kv{font-size:40px}
+.kc-spark{width:100%;height:44px;margin-top:12px}
+@media(max-width:900px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.kpi-grid .kc.kc-featured{grid-column:span 2}}
+@media(max-width:640px){.kpi-grid{grid-template-columns:1fr}.kpi-grid .kc.kc-featured{grid-column:span 1;grid-row:span 1}}
 /* А11-04: KPI cards keyboard focusable */
 .kc:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .kl{font-size:13px;color:var(--muted);margin-bottom:8px;font-weight:400;padding-right:44px}
@@ -122,19 +182,19 @@ input.inp::placeholder{color:var(--muted)}
 .kc-ic{position:absolute;top:16px;right:16px;width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px}
 .ki .kc-ic{background:rgba(96,184,212,.12);color:var(--ice)}
 .kg .kc-ic{background:rgba(63,185,80,.12);color:var(--green)}
-.kb .kc-ic{background:rgba(47,129,247,.12);color:var(--blue)}
+.kb .kc-ic{background:rgba(99,102,241,.12);color:var(--blue)}
 .ky .kc-ic{background:rgba(210,153,34,.12);color:var(--yellow)}
 .kc:not(.ki):not(.kg):not(.kb):not(.ky) .kc-ic{background:var(--s3);color:var(--muted)}
 
 /* ── SECTIONS ────────────────────────────────────────────────────────── */
-.sec{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:20px;box-shadow:var(--shadow)}
-.sh{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
-.st{font-size:13px;font-weight:500;color:var(--text)}
+.sec{background:var(--s1);border:1px solid var(--border);border-radius:var(--r-lg);margin-bottom:20px}
+.sh{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.st{font-size:14px;font-weight:700;color:var(--text);letter-spacing:-.2px}
 .sb2{padding:18px}
-.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.g2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-bottom:20px}
 @media(max-width:1000px){.g2{grid-template-columns:1fr}}
 
-.cw{position:relative;height:clamp(220px,26vh,340px)}.cwsm{position:relative;height:clamp(180px,20vh,240px)}
+.cw{position:relative;height:clamp(220px,26vh,340px);width:100%}.cwsm{position:relative;height:clamp(180px,20vh,240px);width:100%}
 
 /* ── TABLES ─────────────────────────────────────────────────────────── */
 .tw{overflow-x:auto}
@@ -146,15 +206,22 @@ tbody tr:hover td{background:rgba(255,255,255,.055);cursor:default}
 tbody tr:nth-child(even) td{background:rgba(255,255,255,.018)}
 tbody tr:nth-child(even):hover td{background:rgba(255,255,255,.055)}
 .rn{color:var(--muted);font-size:12px}
-.or td{border-left:3px solid var(--ice);background:rgba(96,184,212,.05)}
-.or.ref td{border-left-color:var(--green);background:rgba(63,185,80,.05)}
+.or td{background:rgba(96,184,212,.05)}
+.or td:first-child{border-left:3px solid var(--ice)}
+.or.ref td{background:rgba(63,185,80,.05)}
+.or.ref td:first-child{border-left-color:var(--green)}
 .or:hover td{background:rgba(96,184,212,.10)!important}
 .or.ref:hover td{background:rgba(63,185,80,.10)!important}
+/* Whole-row drill-down affordance — row itself is clickable, opens the product-level modal */
+tbody tr.rowlink{cursor:pointer}
+tbody tr.rowlink:hover td{background:rgba(96,184,212,.09)!important}
+.insight-item.rowlink{cursor:pointer;transition:background .15s var(--ease-out);border-radius:8px}
+.insight-item.rowlink:hover{background:rgba(96,184,212,.07)}
 .our-badge{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;background:rgba(96,184,212,.15);color:var(--ice);border:1px solid rgba(96,184,212,.35);margin-left:5px;vertical-align:middle}
 .our-badge.ref{background:rgba(63,185,80,.15);color:var(--green);border-color:rgba(63,185,80,.35)}
 
 /* ── BADGES ─────────────────────────────────────────────────────────── */
-.abc{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700}
+.abc{display:inline-block;padding:2px 9px;border-radius:6px;font-size:11px;font-weight:700}
 .abc-A{background:rgba(63,185,80,.15);color:var(--green)}
 .abc-B{background:rgba(210,153,34,.15);color:var(--yellow)}
 .abc-C{background:rgba(248,81,73,.15);color:var(--red)}
@@ -174,7 +241,7 @@ tbody tr:nth-child(even):hover td{background:rgba(255,255,255,.055)}
 
 /* ── UPLOAD ─────────────────────────────────────────────────────────── */
 .uz{border:2px dashed var(--border);border-radius:var(--r);padding:48px 40px;text-align:center;cursor:pointer;transition:all .2s;background:var(--s2)}
-.uz:hover,.uz.drag{border-color:var(--blue);background:rgba(47,129,247,.05)}
+.uz:hover,.uz.drag{border-color:var(--blue);background:rgba(99,102,241,.05)}
 .uz i{font-size:40px;color:var(--muted);margin-bottom:14px;display:block}
 .uz.drag i{color:var(--blue)}
 .uz p{color:var(--muted);font-size:13px;line-height:1.7}
@@ -257,14 +324,14 @@ textarea.inp::placeholder{color:var(--muted)}
 .action-num{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;margin-top:2px}
 .action-num.p1{background:rgba(248,81,73,.12);color:var(--red);border:1px solid rgba(248,81,73,.35)}
 .action-num.p2{background:rgba(210,153,34,.12);color:var(--yellow);border:1px solid rgba(210,153,34,.35)}
-.action-num.p3{background:rgba(47,129,247,.12);color:var(--blue);border:1px solid rgba(47,129,247,.35)}
+.action-num.p3{background:rgba(99,102,241,.12);color:var(--blue);border:1px solid rgba(99,102,241,.35)}
 .action-body{flex:1}
 .action-title{font-size:14px;font-weight:700;margin-bottom:4px}
 .action-desc{font-size:12px;color:var(--muted);line-height:1.6}
 .action-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;margin-top:6px}
 .tag-urgent{background:rgba(248,81,73,.12);color:var(--red)}
 .tag-growth{background:rgba(63,185,80,.12);color:var(--green)}
-.tag-optimize{background:rgba(47,129,247,.12);color:var(--blue)}
+.tag-optimize{background:rgba(99,102,241,.12);color:var(--blue)}
 .score-ring{display:flex;align-items:center;gap:20px;padding:20px;background:var(--s2);border-radius:var(--r);margin-bottom:20px}
 .score-circle{width:80px;height:80px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;border:3px solid;flex-shrink:0}
 .score-info h2{font-size:16px;font-weight:700;margin-bottom:4px}
@@ -283,7 +350,7 @@ textarea.inp::placeholder{color:var(--muted)}
 .pos-rank.r1{color:#FFD700;border-color:#FFD700;background:rgba(255,215,0,.1)}
 .pos-rank.r2{color:#C0C0C0;border-color:#C0C0C0;background:rgba(192,192,192,.1)}
 .pos-rank.r3{color:#CD7F32;border-color:#CD7F32;background:rgba(205,127,50,.1)}
-.pos-rank.r4{color:var(--blue);border-color:rgba(47,129,247,.6);background:rgba(47,129,247,.1)}
+.pos-rank.r4{color:var(--blue);border-color:rgba(99,102,241,.6);background:rgba(99,102,241,.1)}
 .pos-meta{flex:1;min-width:200px}
 .pos-title{font-size:16px;font-weight:700;margin-bottom:4px}
 .pos-sub{font-size:12px;color:var(--muted)}
@@ -327,7 +394,7 @@ textarea.inp::placeholder{color:var(--muted)}
 .seg-score.high{background:rgba(63,185,80,.12);color:var(--green)}
 .seg-score.med{background:rgba(210,153,34,.12);color:var(--yellow)}
 .seg-score.low{background:rgba(248,81,73,.12);color:var(--red)}
-.months-badge{font-size:11px;padding:2px 7px;border-radius:4px;background:rgba(47,129,247,.12);color:var(--blue);font-weight:700}
+.months-badge{font-size:11px;padding:2px 7px;border-radius:4px;background:rgba(99,102,241,.12);color:var(--blue);font-weight:700}
 
 /* ── KPI TREND ───────────────────────────────────────────────────────── */
 .kc-trend{font-size:11px;margin-top:6px;display:flex;align-items:center;gap:3px;font-weight:600}
@@ -336,6 +403,13 @@ textarea.inp::placeholder{color:var(--muted)}
 .period-bar{background:var(--s2);border-bottom:1px solid var(--border);padding:6px 24px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-shrink:0}
 .period-bar i{font-size:13px;color:var(--blue);opacity:.7}
 .period-range{color:var(--text);font-weight:500}
+
+/* ── PERSISTENT AI INSIGHT BANNER ──────────────────────────────────────── */
+.top-insight{background:linear-gradient(90deg,var(--blue-dim),transparent);border-bottom:1px solid var(--border);padding:9px 24px;font-size:12.5px;color:var(--text);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.top-insight i{font-size:14px;color:var(--blue);flex-shrink:0}
+.top-insight b{color:var(--blue);font-weight:700}
+.top-insight .ti-close{margin-left:auto;cursor:pointer;color:var(--muted);font-size:15px;flex-shrink:0}
+.top-insight .ti-close:hover{color:var(--text)}
 
 /* ── SKELETON LOADING ────────────────────────────────────────────────── */
 @keyframes sk{0%,100%{opacity:.4}50%{opacity:.8}}
@@ -396,38 +470,25 @@ textarea.inp::placeholder{color:var(--muted)}
   .col-hide-md{display:none}
 }
 
-/* ── REACTBITS VISUAL EFFECTS ──────────────────────────────────────── */
+/* ── SUBTLE INTERACTIONS (restrained — no glow, no motion excess) ────── */
 
-/* 1. Page fade-slide transition — triggers on .active re-add in showPage() */
-@keyframes pageIn{from{opacity:0;transform:translateY(12px) scale(.99)}to{opacity:1;transform:none}}
-.page.active{animation:pageIn .36s cubic-bezier(.16,1,.3,1) both}
+/* Page transition — fade + tiny lift, strong ease-out (feels responsive, not floaty) */
+@keyframes pageIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.page.active{animation:pageIn .18s var(--ease-out) both}
 
-/* 2. KPI card hover glow by colour class */
-.kc{transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;will-change:transform}
-.kc:hover{transform:translateY(-4px) scale(1.018)}
-.ki:hover{border-color:rgba(96,184,212,.55);box-shadow:0 14px 40px rgba(0,0,0,.5),0 0 28px rgba(96,184,212,.12)}
-.kg:hover{border-color:rgba(63,185,80,.55);box-shadow:0 14px 40px rgba(0,0,0,.5),0 0 28px rgba(63,185,80,.12)}
-.kb:hover{border-color:rgba(47,129,247,.55);box-shadow:0 14px 40px rgba(0,0,0,.5),0 0 28px rgba(47,129,247,.12)}
-.ky:hover{border-color:rgba(210,153,34,.55);box-shadow:0 14px 40px rgba(0,0,0,.5),0 0 28px rgba(210,153,34,.12)}
+/* KPI card pop-in on load — brief, staggered via nth-child so the grid cascades in
+   instead of popping all at once (30-80ms rule, capped at 8 so tail cards don't lag) */
+@keyframes kpiPop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.kpi-pop{animation:kpiPop .22s var(--ease-out) both}
+.kpi-grid .kc:nth-child(1){animation-delay:0ms}
+.kpi-grid .kc:nth-child(2){animation-delay:40ms}
+.kpi-grid .kc:nth-child(3){animation-delay:80ms}
+.kpi-grid .kc:nth-child(4){animation-delay:120ms}
+.kpi-grid .kc:nth-child(5){animation-delay:160ms}
+.kpi-grid .kc:nth-child(6){animation-delay:200ms}
+.kpi-grid .kc:nth-child(n+7){animation-delay:220ms}
 
-/* 3. Section card hover */
-.sec{transition:box-shadow .25s ease,border-color .25s ease}
-.sec:hover{box-shadow:0 8px 36px rgba(0,0,0,.45);border-color:rgba(255,255,255,.09)}
-
-/* 4. Logo shimmer — runs on .logo-t which already has that class in the markup */
-@keyframes logoShimmer{0%{background-position:-300% center}100%{background-position:300% center}}
-.logo-t{
-  background:linear-gradient(90deg,var(--text) 0%,var(--ice) 40%,var(--text) 55%,var(--text) 100%);
-  background-size:300% auto;
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
-  animation:logoShimmer 4s linear infinite
-}
-
-/* 5. KPI card pop-in on load */
-@keyframes kpiPop{from{opacity:0;transform:scale(.88) translateY(10px)}to{opacity:1;transform:none}}
-.kpi-pop{animation:kpiPop .45s cubic-bezier(.34,1.56,.64,1) both}
-
-/* 6. Enhanced skeleton shimmer */
+/* Skeleton shimmer — kept: functional loading indicator, not decorative flair */
 @keyframes shimmer{0%{background-position:-300% 0}100%{background-position:300% 0}}
 .skel{
   background:linear-gradient(90deg,var(--s3) 25%,rgba(255,255,255,.045) 50%,var(--s3) 75%) !important;
@@ -435,56 +496,27 @@ textarea.inp::placeholder{color:var(--muted)}
   animation:shimmer 1.8s ease-in-out infinite !important
 }
 
-/* 7. Table row stagger */
-@keyframes rowIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
-.tr-anim{animation:rowIn .22s ease both}
+/* Table row entrance — quick fade, no horizontal slide */
+@keyframes rowIn{from{opacity:0}to{opacity:1}}
+.tr-anim{animation:rowIn .12s var(--ease-out) both}
 
-/* 8. Sidebar active nav highlight */
-.nb.active{box-shadow:inset 2px 0 0 var(--blue),inset 0 0 24px rgba(47,129,247,.06)}
+/* Press feedback for pressable rows/pills used across Приоритеты, ABC, тables */
+.pr-pill,.kLink,a.kaspi-link{transition:transform .12s var(--ease-out)}
+.pr-pill:active{transform:scale(.96)}
 
-/* 9. Particle canvas — floats above page content, blends with dark bg */
-#bg-particles{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:99;mix-blend-mode:screen;opacity:.55}
-
-/* 10. Spinning gradient border on KPI cards (CSS @property trick) */
-/* @supports guard: Firefox не поддерживает @property — fallback через border-color hover */
-@supports (background: conic-gradient(from 1deg, red, blue)) {
-  @property --ba{syntax:'<angle>';inherits:false;initial-value:0deg}
-  @keyframes spinBorder{to{--ba:360deg}}
-  .kc::before{content:'';position:absolute;inset:-1.5px;border-radius:calc(var(--r) + 2px);background:conic-gradient(from var(--ba),#60B8D4,#2F81F7,#3FB950,#A371F7,#60B8D4);z-index:-2;opacity:0;transition:opacity .3s}
-  .kc::after{content:'';position:absolute;inset:1px;border-radius:var(--r);background:var(--s1);z-index:-1}
-  /* ЭФФ-06: все colored hover borders тоже transparent при spin border */
-  .kc:hover,.ki:hover,.kg:hover,.kb:hover,.ky:hover{background:transparent !important;border-color:transparent !important}
-  .kc:hover::before{opacity:1;animation:spinBorder 2s linear infinite}
+/* Motion sickness safety — keep opacity fades (aid comprehension), drop movement */
+@media(prefers-reduced-motion:reduce){
+  .page.active,.kpi-pop,.tr-anim{animation-duration:.01ms!important;animation-delay:0ms!important}
+  .kc,.db,.nb,.type-tab,.chip,.btn,.pr-pill{transition-duration:.01ms!important}
+  .kc:hover{transform:none!important}
 }
-/* ЭФФ-06: glow shadows остаются снаружи @supports (работают везде) */
-.kc{position:relative;isolation:isolate}
 
+/* Scroll reveal — quick fade only, no vertical travel */
+.reveal-ready{opacity:0;transition:opacity .2s ease}
+.reveal-ready.revealed{opacity:1}
 
-/* 12. Scroll reveal */
-.reveal-ready{opacity:0;transform:translateY(22px);transition:opacity .55s ease,transform .55s ease}
-.reveal-ready.revealed{opacity:1;transform:none}
-
-/* 13. Glitch */
-@keyframes glitch{0%,100%{transform:none;filter:none}25%{transform:translate(-3px,0) skew(-1deg);filter:hue-rotate(60deg) brightness(1.3)}50%{transform:translate(3px,0) skew(1deg);filter:hue-rotate(120deg)}75%{transform:translate(-1px,0);filter:brightness(1.1)}}
-.glitching{animation:glitch .4s steps(2) 1}
-
-/* 14. Top loading bar */
-#load-bar{position:fixed;top:0;left:0;height:2px;width:0;z-index:9999;pointer-events:none;background:linear-gradient(90deg,#60B8D4,#2F81F7,#3FB950);opacity:0}
-
-/* 15. Ripple on click — removed */
-
-/* 16. Aurora background */
-#aurora{position:fixed;inset:0;pointer-events:none;z-index:2;mix-blend-mode:screen;opacity:.17}
-#aurora .ab{position:absolute;border-radius:50%;filter:blur(90px)}
-@keyframes auroraFloat{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(38px,-28px) scale(1.08)}66%{transform:translate(-28px,30px) scale(.93)}}
-
-/* 17. Neon pulse on KPI values */
-.ki .kv{color:var(--ice)}
-.kg .kv{color:var(--green)}
-.kb .kv{color:var(--blue)}
-.ky .kv{color:var(--yellow)}
-@keyframes neonPulse{0%,100%{text-shadow:0 0 6px currentColor,0 0 22px currentColor,0 0 42px currentColor}50%{text-shadow:0 0 2px currentColor,0 0 8px currentColor}}
-.neon-kv{animation:neonPulse 2.5s ease-in-out infinite}
+/* Top loading bar — single accent color, no rainbow gradient */
+#load-bar{position:fixed;top:0;left:0;height:2px;width:0;z-index:9999;pointer-events:none;background:var(--ice);opacity:0}
 </style>
 </head>
 <body>
@@ -501,26 +533,27 @@ textarea.inp::placeholder{color:var(--muted)}
 
   <div class="dept-sec">
     <div class="sl">Отдел</div>
+    <div class="dept-indicator" id="dept-indicator"></div>
     <button class="db af" id="btn-f" onclick="setDept('frz')"><span class="dd dd-f"></span>Морозильники<span class="dc" id="cnt-f">—</span></button>
     <button class="db" id="btn-r" onclick="setDept('ref')"><span class="dd dd-r"></span>Холод. витрины<span class="dc" id="cnt-r">—</span></button>
   </div>
 
   <div class="nav-sec">
     <div class="sl">Аналитика</div>
-    <button class="nb active" data-p="overview" onclick="showPage('overview')"><i class="ti ti-layout-dashboard"></i>Обзор</button>
-    <button class="nb" data-p="priority" onclick="showPage('priority')"><i class="ti ti-cash"></i>Приоритеты</button>
-    <button class="nb" data-p="brands" onclick="showPage('brands')"><i class="ti ti-building-store"></i>Бренды</button>
-    <button class="nb" data-p="vetka" onclick="showPage('vetka')"><i class="ti ti-git-branch"></i>Ветки</button>
-    <button class="nb" data-p="products" onclick="showPage('products')"><i class="ti ti-packages"></i>Товары</button>
-    <button class="nb" data-p="abc" onclick="showPage('abc')"><i class="ti ti-chart-pie"></i>ABC-анализ</button>
-    <button class="nb" data-p="trends" onclick="showPage('trends')"><i class="ti ti-chart-line"></i>Тренды</button>
-    <button class="nb" data-p="tactics" onclick="showPage('tactics')"><i class="ti ti-target"></i>Тактика</button>
+    <button class="nb active" data-p="overview" onclick="showPage('overview')"><i class="ti ti-layout-dashboard nav-ic" style="color:var(--blue);background:rgba(99,102,241,.14)"></i>Обзор</button>
+    <button class="nb" data-p="brands" onclick="showPage('brands')"><i class="ti ti-building-store nav-ic" style="color:var(--purple);background:rgba(163,113,247,.14)"></i>Бренды</button>
+    <button class="nb" data-p="vetka" onclick="showPage('vetka')"><i class="ti ti-git-branch nav-ic" style="color:var(--ice);background:rgba(96,184,212,.14)"></i>Ветки</button>
+    <button class="nb" data-p="products" onclick="showPage('products')"><i class="ti ti-packages nav-ic" style="color:var(--yellow);background:rgba(210,153,34,.14)"></i>Товары</button>
+    <button class="nb" data-p="abc" onclick="showPage('abc')"><i class="ti ti-chart-pie nav-ic" style="color:var(--red);background:rgba(248,81,73,.14)"></i>ABC-анализ</button>
+    <button class="nb" data-p="trends" onclick="showPage('trends')"><i class="ti ti-chart-line nav-ic" style="color:var(--green);background:rgba(63,185,80,.14)"></i>Тренды</button>
+    <button class="nb" data-p="tactics" onclick="showPage('tactics')"><i class="ti ti-target nav-ic" style="color:var(--purple);background:rgba(163,113,247,.14)"></i>Тактика</button>
+    <button class="nb" data-p="priority" onclick="showPage('priority')"><i class="ti ti-cash nav-ic" style="color:var(--green);background:rgba(63,185,80,.14)"></i>Приоритеты</button>
   </div>
 
   <div class="nav-bottom">
     <div class="sl">Система</div>
-    <button class="nb" data-p="upload" onclick="showPage('upload')"><i class="ti ti-upload"></i>Загрузка данных</button>
-    <button class="nb" data-p="settings" onclick="showPage('settings')"><i class="ti ti-settings"></i>Настройки</button>
+    <button class="nb" data-p="upload" onclick="showPage('upload')" title="Загрузка данных"><i class="ti ti-upload"></i><span class="nb-label">Загрузка данных</span></button>
+    <button class="nb" data-p="settings" onclick="showPage('settings')" title="Настройки"><i class="ti ti-settings"></i><span class="nb-label">Настройки</span></button>
     <div class="last-upd" id="last-upd" style="display:none"><i class="ti ti-refresh"></i><span id="last-upd-txt"></span></div>
   </div>
 
@@ -552,6 +585,10 @@ textarea.inp::placeholder{color:var(--muted)}
     Данные охватывают: <span class="period-range" id="period-range">—</span>
     <span id="period-months" style="color:var(--muted)"></span>
   </div>
+
+  <!-- PERSISTENT INSIGHT BANNER — top data insight, visible on every page.
+       Computed instantly from already-loaded analytics data (no extra API/AI call per page). -->
+  <div class="top-insight" id="top-insight" style="display:none"></div>
 
   <!-- TYPE TAB BAR — primary navigation by product type -->
   <div class="type-bar type-bar-hide" id="type-bar"></div>
@@ -899,7 +936,7 @@ function showAdminModal(onSuccess){
   setTimeout(()=>inp.focus(),50);
 }
 const CH={};
-const PAL=['#60B8D4','#3FB950','#2F81F7','#D29922','#A371F7','#F85149','#79C0FF','#56D364','#FFA657','#FF7B72','#D2A8FF'];
+const PAL=['#60B8D4','#3FB950','#6366F1','#D29922','#A371F7','#F85149','#79C0FF','#56D364','#FFA657','#FF7B72','#D2A8FF'];
 const DL={frz:'Морозильники',ref:'Холод. витрины'};
 const DA={frz:'freezers',ref:'refrigerated'};
 const PTITLES={overview:'Обзор',priority:'Приоритеты',brands:'Бренды',vetka:'Ветки',products:'Товары',abc:'ABC',trends:'Тренды',tactics:'Тактика',upload:'Загрузка',settings:'Настройки'};
@@ -910,6 +947,18 @@ if(!window._brands) window._brands=new Set(['AOLIEGE','FRIGGIER','LEADBROS','XIN
 // ── HELPERS ──
 function dc(){return A.dept==='ref'?'#3FB950':'#60B8D4'}
 function fmtR(v){v=+v||0;if(v>=1e9)return(v/1e9).toFixed(1)+' млрд ₸';if(v>=1e6)return(v/1e6).toFixed(1)+' млн ₸';if(v>=1e3)return(v/1e3).toFixed(0)+' тыс ₸';return v.toFixed(0)+' ₸'}
+// ── StyleSeed "Large Number + Small Unit" rule (design-skills/styleseed-design-language.md,
+//    §2): the eye should land on the number first — unit wraps in a smaller, lighter span
+//    instead of running at the same size/weight as the figure it's attached to. ──
+function fmtRUnit(v){
+  v=+v||0;
+  let num,unit;
+  if(v>=1e9){num=(v/1e9).toFixed(1);unit='млрд ₸';}
+  else if(v>=1e6){num=(v/1e6).toFixed(1);unit='млн ₸';}
+  else if(v>=1e3){num=(v/1e3).toFixed(0);unit='тыс ₸';}
+  else {num=v.toFixed(0);unit='₸';}
+  return `${num}<span class="num-unit">${unit}</span>`;
+}
 function fmtN(v){return(+v||0).toLocaleString('ru-RU')}
 // Kaspi link — direct product card if kod is a Kaspi article ID, else smart search
 // kod = Kaspi article number (7-10 digits) stored as "код товара" in Excel
@@ -978,7 +1027,7 @@ function initParticles(){
     _paused=document.hidden;
     if(!_paused&&!_rafId){_rafId=requestAnimationFrame(frame);}
   });
-  const N=55,C=['96,184,212','47,129,247','63,185,80','163,113,247'];
+  const N=55,C=['96,184,212','99,102,241','63,185,80','163,113,247'];
   const pts=Array.from({length:N},()=>({
     x:Math.random()*window.innerWidth,y:Math.random()*window.innerHeight,
     r:Math.random()*2+.8,
@@ -1007,16 +1056,14 @@ function initParticles(){
   _rafId=requestAnimationFrame(frame);
 }
 
-// ── KPI COUNTER ANIMATION (scramble) ──────────────────────────────────
+// ── KPI DISPLAY (instant values, brief pop-in, accessibility attrs) ──
 function animateKPIs(){
-  // Scramble digits for data-val elements
-  document.querySelectorAll('.kv[data-val]').forEach((el,i)=>{
-    scrambleEl(el, el.textContent, i*75);
+  document.querySelectorAll('.kv[data-val]').forEach(el=>{
+    scrambleEl(el, el.innerHTML);
   });
-  // Stagger pop-in for each KPI card + А11-04 accessibility
   document.querySelectorAll('.kpi-grid .kc').forEach((card,i)=>{
     card.classList.remove('kpi-pop');
-    card.style.animationDelay=(i*55)+'ms';
+    card.style.animationDelay=(i*30)+'ms';
     void card.offsetWidth;
     card.classList.add('kpi-pop');
     // А11-04: make KPI cards keyboard-accessible
@@ -1025,12 +1072,10 @@ function animateKPIs(){
     const label=card.querySelector('.kl')?.textContent;
     if(label&&!card.getAttribute('aria-label'))card.setAttribute('aria-label',label);
   });
-  // Neon pulse только на первых 3 цветных KPI (ЭФФ-04: CPU оптимизация)
-  let neonCount=0;
-  document.querySelectorAll('.ki .kv,.kg .kv,.kb .kv,.ky .kv').forEach(el=>{
-    if(neonCount<3){el.classList.add('neon-kv');neonCount++;}
-    else{el.classList.remove('neon-kv');}
-  });
+  // "Наша выручка" gets the bento "featured" treatment (bigger number) —
+  // it's the one metric that answers "is everything ok" for the business.
+  const featured=document.querySelector('.kpi-grid .kc.kg')||document.querySelector('.kpi-grid .kc');
+  if(featured) featured.classList.add('kc-featured');
 }
 
 // ── TABLE ROW STAGGER ─────────────────────────────────────────────────
@@ -1069,22 +1114,38 @@ function initTilt(){
 }
 
 
-// ── NUMBER SCRAMBLE ───────────────────────────────────────────────────
-function scrambleEl(el,orig,delay=0){
-  const chars='0123456789';
-  setTimeout(()=>{
-    const dur=680,start=performance.now();
-    function tick(now){
-      const p=Math.min((now-start)/dur,1);
-      // Scramble until 65%, then snap
-      el.textContent=p<.65
-        ?orig.replace(/[0-9]/g,()=>chars[Math.floor(Math.random()*10)])
-        :orig;
-      if(p<1) requestAnimationFrame(tick);
-      else el.textContent=orig;
-    }
-    requestAnimationFrame(tick);
-  },delay);
+// ── NUMBER DISPLAY (instant — no scramble animation, values just appear) ──
+// ── ANIMATED KPI COUNT-UP (Emil Kowalski "Numbers/Counters" principle:
+//    a changing metric benefits from a brief animated count rather than an
+//    instant swap — valid "state indication" purpose, kept under ~700ms,
+//    strong ease-out, skipped entirely under prefers-reduced-motion) ──
+function scrambleEl(el,orig){
+  const raw=el.getAttribute('data-val');
+  const fmt=el.getAttribute('data-fmt');
+  const reduceMotion=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(raw==null||!fmt||reduceMotion){ el.innerHTML=orig; return; }
+  const target=+raw||0;
+  // Preserve any trailing markup (e.g. the "/ 5.0" span on Рейтинг) so it doesn't flicker away and back
+  const tmp=document.createElement('div'); tmp.innerHTML=orig;
+  const suffixEl=tmp.querySelector('span');
+  const suffixHtml=suffixEl?suffixEl.outerHTML:'';
+  const dur=700, start=performance.now();
+  const easeOut=t=>1-Math.pow(1-t,3); // matches --ease-out spirit: fast start, settles
+  function fmtVal(v){
+    if(fmt==='r') return fmtRUnit(v); // already wraps its own unit span — don't also append suffixHtml
+    if(fmt==='n') return fmtN(Math.round(v));
+    if(fmt==='i') return String(Math.round(v));
+    if(fmt==='f2') return v.toFixed(2);
+    return String(Math.round(v));
+  }
+  function frame(now){
+    const t=Math.min(1,(now-start)/dur);
+    const v=target*easeOut(t);
+    el.innerHTML=fmtVal(v)+(fmt==='r'?'':suffixHtml);
+    if(t<1) requestAnimationFrame(frame);
+    else el.innerHTML=orig; // land on the exact original string — avoids rounding drift
+  }
+  requestAnimationFrame(frame);
 }
 
 // ── TYPEWRITER (ТИП-03: адаптивная скорость — короткие быстро, длинные без анимации) ──
@@ -1127,7 +1188,7 @@ const _lb=(()=>{
     start(){
       _inflight++;
       clearTimeout(tid);
-      el.style.cssText='position:fixed;top:0;left:0;height:2px;z-index:9999;pointer-events:none;background:linear-gradient(90deg,#60B8D4,#2F81F7,#3FB950);opacity:1;width:0;transition:none';
+      el.style.cssText='position:fixed;top:0;left:0;height:2px;z-index:9999;pointer-events:none;background:linear-gradient(90deg,#60B8D4,#6366F1,#3FB950);opacity:1;width:0;transition:none';
       void el.offsetWidth;
       el.style.transition='width 1.8s cubic-bezier(.1,1,.3,1)';
       el.style.width='78%';
@@ -1152,7 +1213,7 @@ function initAurora(){
   el.id='aurora';
   const B=[
     {c:'rgba(96,184,212,.9)', w:750,h:550,x:'3%', y:'-5%',d:'20s',dl:'0s'},
-    {c:'rgba(47,129,247,.8)', w:620,h:620,x:'52%',y:'12%', d:'27s',dl:'-10s'},
+    {c:'rgba(99,102,241,.8)', w:620,h:620,x:'52%',y:'12%', d:'27s',dl:'-10s'},
     {c:'rgba(63,185,80,.7)',  w:520,h:420,x:'18%',y:'52%', d:'33s',dl:'-17s'},
     {c:'rgba(163,113,247,.8)',w:500,h:580,x:'63%',y:'58%', d:'24s',dl:'-7s'},
   ];
@@ -1246,6 +1307,28 @@ async function checkAPI(){
 }
 
 // ── NAV ──
+// ── Persistent top insight banner — reads the last-computed market position
+// (cached from Обзор's already-fetched /analytics/intelligence call) and shows
+// a one-line headline on EVERY page. No extra API/AI call — just reusing data
+// that was already loaded, so it's instant and free.
+function renderTopInsight(){
+  const box=g('top-insight');
+  if(!box) return;
+  const ins=window._lastInsight;
+  if(!ins||!ins.mp||ins.dept!==A.dept){box.style.display='none';return;}
+  const mp=ins.mp;
+  const rank=mp.our_rank||99;
+  const gap=mp.gap_to_leader||0;
+  let text;
+  if(gap>0){
+    text=`Мы <b>#${rank}</b> из ${mp.total_brands} · до лидера <b>${escHtml(mp.leader_brand||'')}</b> не хватает <b>${fmtR(gap)}</b>`;
+  } else {
+    text=`Мы <b>лидеры рынка</b> — доля ${mp.market_share_pct.toFixed(1)}%`;
+  }
+  box.innerHTML=`<i class="ti ti-bulb" aria-hidden="true"></i><span>${text}</span><i class="ti ti-x ti-close" onclick="g('top-insight').style.display='none'" role="button" aria-label="Скрыть" tabindex="0"></i>`;
+  box.style.display='flex';
+}
+
 function showPage(name){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const _pg=g('page-'+name);
@@ -1282,6 +1365,8 @@ function showPage(name){
   if(pb)pb.style.display=hidePeriod?'none':'';
   updatePageTitle(name);
   renderActive();
+  if(hidePeriod){const ti=g('top-insight');if(ti)ti.style.display='none';}
+  else renderTopInsight();
 }
 function updatePageTitle(name){
   const base=PTITLES[name||document.querySelector('.nb.active')?.dataset.p]||'';
@@ -1300,6 +1385,7 @@ function updatePageTitle(name){
 
 function setDept(d){
   A.dept=d;A.month='';A.sub='';A.pp=1;
+  document.documentElement.dataset.dept=d; // ── retheme accent color per department (CSS reads this)
   g('month-sel').value='';
   // Reset priority state so filter/done don't bleed across dept switches
   window._prFilter = {dept:'all', cat:'all'};
@@ -1307,6 +1393,7 @@ function setDept(d){
   window._prOpps   = [];
   g('btn-f').className='db'+(d==='frz'?' af':'');
   g('btn-r').className='db'+(d==='ref'?' ar':'');
+  moveDeptIndicator();
   const bd=g('tb-dept');
   bd.className='tb-dept '+(d==='frz'?'df':'dr');
   bd.innerHTML=`<span class="dd dd-${d==='frz'?'f':'r'}"></span>${DL[d]}`;
@@ -1315,6 +1402,52 @@ function setDept(d){
   if(lic){lic.classList.remove('glitching');void lic.offsetWidth;lic.classList.add('glitching');setTimeout(()=>lic.classList.remove('glitching'),500);}
   loadMonths();loadSubtypes();loadCounts();renderActive();
 }
+
+// ── SPRING-DRIVEN DEPARTMENT PILL (Emil Kowalski "Spring Animations":
+//    springs feel more natural than fixed-duration animations because they
+//    simulate real physics and stay interruptible — clicking rapidly between
+//    the two departments retargets smoothly instead of restarting from zero) ──
+let _deptSpring=null;
+function moveDeptIndicator(instant){
+  const ind=document.getElementById('dept-indicator');
+  const sec=document.querySelector('.dept-sec');
+  const active=sec&&sec.querySelector('.db.af,.db.ar');
+  if(!ind||!sec||!active||active.offsetParent===null) return;
+  const targetX=active.offsetLeft, targetW=active.offsetWidth;
+  const targetTop=active.offsetTop, targetH=active.offsetHeight;
+  const isRef=active.classList.contains('ar');
+  ind.style.background=isRef?'rgba(63,185,80,.1)':'rgba(96,184,212,.1)';
+  ind.style.borderColor=isRef?'rgba(63,185,80,.25)':'rgba(96,184,212,.25)';
+  ind.style.top=targetTop+'px';
+  ind.style.height=targetH+'px';
+  const reduceMotion=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(instant||reduceMotion||!ind.classList.contains('ready')){
+    if(_deptSpring&&_deptSpring.raf) cancelAnimationFrame(_deptSpring.raf);
+    ind.style.left=targetX+'px'; ind.style.width=targetW+'px';
+    ind.classList.add('ready');
+    _deptSpring={x:targetX,w:targetW,vx:0,vw:0,raf:null};
+    return;
+  }
+  const stiffness=210, damping=24, mass=1;
+  if(_deptSpring&&_deptSpring.raf) cancelAnimationFrame(_deptSpring.raf);
+  let {x,w,vx,vw}=_deptSpring||{x:targetX,w:targetW,vx:0,vw:0};
+  let last=performance.now();
+  function step(now){
+    const dt=Math.min(32,now-last)/1000; last=now;
+    const fx=-stiffness*(x-targetX)-damping*vx; vx+=fx/mass*dt; x+=vx*dt;
+    const fw=-stiffness*(w-targetW)-damping*vw; vw+=fw/mass*dt; w+=vw*dt;
+    ind.style.left=x+'px'; ind.style.width=w+'px';
+    const settled=Math.abs(targetX-x)<0.4&&Math.abs(vx)<0.4&&Math.abs(targetW-w)<0.4&&Math.abs(vw)<0.4;
+    if(settled){
+      ind.style.left=targetX+'px'; ind.style.width=targetW+'px';
+      _deptSpring={x:targetX,w:targetW,vx:0,vw:0,raf:null};
+    } else {
+      _deptSpring={x,w,vx,vw,raf:requestAnimationFrame(step)};
+    }
+  }
+  _deptSpring={x,w,vx,vw,raf:requestAnimationFrame(step)};
+}
+window.addEventListener('resize',()=>moveDeptIndicator(true));
 
 // ── MONTHS ──
 async function loadMonths(){
@@ -1437,11 +1570,11 @@ function _doRenderActive(){
 
 // ── CHARTS ──
 const _CHART_TOOLTIP={
-  backgroundColor:'#1C2333',
-  borderColor:'#30363D',
+  backgroundColor:'#1B1B1F',
+  borderColor:'#2A2A30',
   borderWidth:1,
-  titleColor:'#E6EDF3',
-  bodyColor:'#9DA5B0',
+  titleColor:'#F2F2F5',
+  bodyColor:'#8B8B93',
   padding:10,
   cornerRadius:8,
   titleFont:{family:'Inter',size:12,weight:'600'},
@@ -1449,11 +1582,59 @@ const _CHART_TOOLTIP={
   displayColors:true,
   boxWidth:10,boxHeight:10,boxPadding:4,
 };
-const _CHART_LEGEND={color:'#9DA5B0',font:{family:'Inter',size:12},padding:12};
-const _CHART_TICKS={color:'#9DA5B0',font:{family:'Inter',size:11}};
+const _CHART_LEGEND={color:'#8B8B93',font:{family:'Inter',size:12},padding:12};
+const _CHART_TICKS={color:'#8B8B93',font:{family:'Inter',size:11}};
 const _CHART_GRID={color:'rgba(48,54,61,.8)'};
 
 function dch(id){if(CH[id]){CH[id].destroy();delete CH[id]}}
+
+// ── Inline sparkline — no chart library needed, just an SVG polyline +
+// gradient-filled area under it, built from a handful of monthly values.
+// Used both on the bento hero card and on smaller KPI tiles, so the
+// "number in a box" pattern isn't the only thing repeating across the grid.
+function sparklineSvg(values,color){
+  return sparklineSvgColor(values,color||'var(--green)');
+}
+function sparklineSvgColor(values,color,h){
+  const v=(values||[]).map(x=>+x||0);
+  if(v.length<2) return '';
+  const w=280,pad=3; h=h||44;
+  const min=Math.min(...v),max=Math.max(...v);
+  const range=(max-min)||1;
+  const pts=v.map((val,i)=>{
+    const x=pad+(i/(v.length-1))*(w-pad*2);
+    const y=pad+(1-(val-min)/range)*(h-pad*2);
+    return [x,y];
+  });
+  const line=pts.map(p=>p.join(',')).join(' ');
+  const area=`${pad},${h-pad} ${line} ${w-pad},${h-pad}`;
+  const gid='spg'+Math.random().toString(36).slice(2,8);
+  return `<svg class="kc-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${color}" stop-opacity=".35"/>
+      <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+    </linearGradient></defs>
+    <polygon points="${area}" fill="url(#${gid})"/>
+    <polyline points="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+}
+
+// ── Radial progress ring — used for share-of-market style percentages
+// instead of a bare number. `pct` 0-100, `cap` = value at which the ring reads "full" (default 25%).
+function ringSvg(pct,color,cap,size,suffix){
+  const c=color||'var(--blue)';
+  size=size||64;
+  const stroke=Math.max(6,Math.round(size*.11)),r=(size-stroke)/2,circ=2*Math.PI*r;
+  const frac=Math.max(0,Math.min(1,(+pct||0)/(cap||25)));
+  const offset=circ*(1-frac);
+  const fs=Math.round(size*.23);
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0" aria-hidden="true">
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--border)" stroke-width="${stroke}"/>
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${c}" stroke-width="${stroke}" stroke-linecap="round"
+      stroke-dasharray="${circ}" stroke-dashoffset="${offset}" transform="rotate(-90 ${size/2} ${size/2})"/>
+    <text x="${size/2}" y="${size/2+fs*.35}" text-anchor="middle" font-size="${fs}" font-weight="700" fill="var(--text)" font-family="'Space Grotesk',sans-serif">${(+pct||0).toFixed(0)}${suffix===''?'':(suffix||'%')}</text>
+  </svg>`;
+}
 
 function mkDonut(id,labels,data,colors){
   dch(id);const ctx=g(id);if(!ctx)return;
@@ -1465,7 +1646,7 @@ function mkDonut(id,labels,data,colors){
     D=[...D.slice(0,7),rest];
     C=[...(C instanceof Array?C.slice(0,7):[]),'#444c56'];
   }
-  CH[id]=new Chart(ctx,{type:'doughnut',data:{labels:L,datasets:[{data:D,backgroundColor:C,borderWidth:2,borderColor:'#161B22'}]},
+  CH[id]=new Chart(ctx,{type:'doughnut',data:{labels:L,datasets:[{data:D,backgroundColor:C,borderWidth:2,borderColor:'#131316'}]},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{
         tooltip:{..._CHART_TOOLTIP,callbacks:{label:ctx=>' '+ctx.label+': '+fmtR(ctx.raw)}},
@@ -1502,6 +1683,18 @@ function mkLine(id,labels,datasets,extraOpts){
   const opts = extraOpts ? _deepMerge(base, extraOpts) : base;
   CH[id]=new Chart(ctx,{type:'line',data:{labels,datasets},options:opts});
 }
+// ── Scriptable canvas gradient (top color fades to transparent) for area-fill line charts ──
+function vGrad(hex){
+  return (ctx)=>{
+    const {chart}=ctx;
+    const {chartArea}=chart;
+    if(!chartArea) return hex+'22';
+    const g=chart.ctx.createLinearGradient(0,chartArea.top,0,chartArea.bottom);
+    g.addColorStop(0,hex+'55');
+    g.addColorStop(1,hex+'00');
+    return g;
+  };
+}
 function _deepMerge(a,b){
   const r={...a};
   for(const k in b){
@@ -1524,6 +1717,8 @@ async function renderOverview(){
 
     // Market position banner (from intelligence)
     const mp = intel?.market_position;
+    window._lastInsight = {mp, dept: A.dept};
+    renderTopInsight();
     let posBannerHtml = '';
     if(mp){
       const rank = mp.our_rank || 99;
@@ -1549,7 +1744,10 @@ async function renderOverview(){
           </div>
           <div class="pos-kpis">
             <div class="pos-kpi"><div class="pos-kpi-v" style="color:var(--green)">${fmtR(mp.our_combined_revenue)}</div><div class="pos-kpi-l">Наша выручка</div></div>
-            <div class="pos-kpi"><div class="pos-kpi-v" style="color:${mp.market_share_pct>=15?'var(--green)':mp.market_share_pct>=8?'var(--yellow)':'var(--red)'}">${mp.market_share_pct.toFixed(1)}%</div><div class="pos-kpi-l">Доля рынка</div></div>
+            <div class="pos-kpi" style="display:flex;align-items:center;gap:10px">
+              ${ringSvg(mp.market_share_pct, mp.market_share_pct>=15?'var(--green)':mp.market_share_pct>=8?'var(--yellow)':'var(--red)')}
+              <div class="pos-kpi-l">Доля рынка</div>
+            </div>
             <div class="pos-kpi"><div class="pos-kpi-v">${mp.total_brands}</div><div class="pos-kpi-l">Брендов всего</div></div>
           </div>
           ${gapLeader>0?`<div class="pos-gap">
@@ -1602,8 +1800,8 @@ async function renderOverview(){
     }
 
     g('kpi-g').innerHTML=`
-      <div class="kc ki"><div class="kc-ic"><i class="ti ti-trending-up"></i></div><div class="kl">Выручка рынка</div><div class="kv" data-val="${d.total_revenue}" data-fmt="r">${fmtR(d.total_revenue)}</div><div class="ks">${fmtN(d.total_units)} шт</div>${trendArrow(lastM.revenue,prevM.revenue)}</div>
-      <div class="kc kg"><div class="kc-ic"><i class="ti ti-cash"></i></div><div class="kl">Наша выручка</div><div class="kv" data-val="${d.our_revenue}" data-fmt="r">${fmtR(d.our_revenue)}</div><div class="ks">${(+d.our_share_pct||0).toFixed(1)}% доли рынка</div>${trendArrow(lastM.our_revenue,prevM.our_revenue)}</div>
+      <div class="kc ki"><div class="kc-ic"><i class="ti ti-trending-up"></i></div><div class="kl">Выручка рынка</div><div class="kv" data-val="${d.total_revenue}" data-fmt="r">${fmtRUnit(d.total_revenue)}</div><div class="ks">${fmtN(d.total_units)} шт</div>${trendArrow(lastM.revenue,prevM.revenue)}${sparklineSvgColor(monthly.map(m=>m.revenue),'var(--ice)')}</div>
+      <div class="kc kg"><div class="kc-ic"><i class="ti ti-cash"></i></div><div class="kl">Наша выручка</div><div class="kv hero-num" data-val="${d.our_revenue}" data-fmt="r">${fmtRUnit(d.our_revenue)}</div><div class="ks">${(+d.our_share_pct||0).toFixed(1)}% доли рынка</div>${trendArrow(lastM.our_revenue,prevM.our_revenue)}${sparklineSvg(monthly.map(m=>m.our_revenue))}</div>
       <div class="kc kb"><div class="kc-ic"><i class="ti ti-package"></i></div><div class="kl">Наши штуки</div><div class="kv" data-val="${d.our_units}" data-fmt="n">${fmtN(d.our_units)}</div><div class="ks">из ${fmtN(d.total_units)} на рынке</div></div>
       <div class="kc"><div class="kc-ic"><i class="ti ti-building-store"></i></div><div class="kl">Брендов</div><div class="kv" data-val="${d.unique_brands}" data-fmt="n">${fmtN(d.unique_brands)}</div><div class="ks">${fmtN(d.unique_products)} SKU на рынке</div></div>
       <div class="kc ky"><div class="kc-ic"><i class="ti ti-list-check"></i></div><div class="kl">Наших SKU</div><div class="kv" data-val="${d.our_sku||0}" data-fmt="i">${d.our_sku||0}</div><div class="ks">${d.our_abc_a||0} в категории A</div></div>
@@ -1633,8 +1831,8 @@ async function renderOverview(){
 
     if(d.monthly&&d.monthly.length){
       mkLine('ch-m',d.monthly.map(m=>m.month),[
-        {label:'Рынок',data:d.monthly.map(m=>m.revenue),borderColor:dc(),backgroundColor:dc()+'22',fill:true,tension:.3},
-        {label:'Наши',data:d.monthly.map(m=>m.our_revenue),borderColor:'#3FB950',backgroundColor:'#3FB95022',fill:true,tension:.3},
+        {label:'Рынок',data:d.monthly.map(m=>m.revenue),borderColor:dc(),backgroundColor:vGrad(dc()),fill:true,tension:.3},
+        {label:'Наши',data:d.monthly.map(m=>m.our_revenue),borderColor:'#3FB950',backgroundColor:vGrad('#3FB950'),fill:true,tension:.3},
       ]);
     }
 
@@ -1664,9 +1862,10 @@ async function renderBrands(){
     const brands=d.brands||[];
     if(!brands.length){ss('br','em');return;}
     ss('br','ct');
+    window._brData=brands;
     const top10=brands.slice(0,10);
     mkDonut('ch-bd',top10.map(b=>b.brand),top10.map(b=>b.revenue),top10.map((b,i)=>b.is_ours?dc():PAL[i%PAL.length]));
-    mkBar('ch-bb',top10.map(b=>b.brand.slice(0,20)),[{label:'Выручка',data:top10.map(b=>b.revenue),backgroundColor:top10.map(b=>b.is_ours?dc():'#30363D'),borderRadius:4}],true);
+    mkBar('ch-bb',top10.map(b=>b.brand.slice(0,20)),[{label:'Выручка',data:top10.map(b=>b.revenue),backgroundColor:top10.map(b=>b.is_ours?dc():'#2A2A30'),borderRadius:4}],true);
 
     // Build threat map from intelligence
     const threats = new Set((intel?.competitive_threats||[]).map(t=>t.brand));
@@ -1679,7 +1878,7 @@ async function renderBrands(){
         const avgRev_pct = maxAvgRev>0?(revPerSku/maxAvgRev*100):0;
         const threatIcon = threats.has(b.brand)?`<span title="Растущая угроза" style="color:var(--red);font-size:11px">⚠</span>`:'';
         const revPerSkuColor = revPerSku > maxAvgRev*0.5 ? 'var(--green)' : 'var(--muted)';
-        return `<tr${b.is_ours?' class="or'+(A.dept==='ref'?' ref':'')+'"':''}>
+        return `<tr class="rowlink${b.is_ours?' or'+(A.dept==='ref'?' ref':''):''}" onclick="if(!event.target.closest('a'))openBrandDrill(${i})">
           <td class="rn">${i+1}</td>
           <td style="color:${b.is_ours?dc():'inherit'}">${escHtml(b.brand)}${b.is_ours?' ⭐':''}${threatIcon}${kLink(b.top_name||'',b.brand,true,'',b.top_kod||'')}</td>
           <td>${fmtR(b.revenue)}</td>
@@ -1696,6 +1895,7 @@ async function renderBrands(){
 
     // БРН-03: use stable container for threats — avoids scroll-position jump on re-render
     const compThreats = intel?.competitive_threats||[];
+    window._brThreats=compThreats;
     const thrBox=g('br-threats-box');
     if(thrBox){
       thrBox.innerHTML=compThreats.length>0?`<div class="sec" style="margin-top:20px">
@@ -1703,7 +1903,7 @@ async function renderBrands(){
         <div class="sb2">
           <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Конкуренты, работающие в тех же ветках где мы присутствуем:</p>
           <div class="tw"><table><thead><tr><th>Бренд</th><th>Выручка в наших сегментах</th><th>SKU</th><th>Веток</th><th>Динамика</th></tr></thead><tbody>
-          ${compThreats.map(t=>`<tr>
+          ${compThreats.map((t,ti)=>`<tr class="rowlink" onclick="openThreatDrill(${ti})">
             <td style="font-weight:500">${escHtml(t.brand)}</td>
             <td>${fmtR(t.revenue)}</td>
             <td>${t.sku_count}</td>
@@ -1730,6 +1930,7 @@ async function renderVetka(){
     const vetka=d.vetka||[];
     if(!vetka.length){ss('vt','em');return;}
     ss('vt','ct');
+    window._vtData=vetka;
 
     // Build intelligence map by vetka name
     const segMap={};
@@ -1739,7 +1940,7 @@ async function renderVetka(){
     const vLabels=top15.map(v=>v.vetka.slice(0,28));
     const vFull=top15.map(v=>v.vetka); // ВТК-03: полные названия для tooltip
     mkBar('ch-vb',vLabels,[
-      {label:'Рынок',data:top15.map(v=>v.revenue),backgroundColor:'#30363D',borderRadius:4},
+      {label:'Рынок',data:top15.map(v=>v.revenue),backgroundColor:'#2A2A30',borderRadius:4},
       {label:'Наши',data:top15.map(v=>v.our_revenue),backgroundColor:dc(),borderRadius:4},
     ],true);
     // ВТК-03: Override tooltip to show full vetka name
@@ -1801,7 +2002,7 @@ async function renderVetka(){
         const seg=segMap[v.vetka];
         const shareColor=v.our_share_pct>=20?'var(--green)':v.our_share_pct>=8?'var(--yellow)':v.our_revenue>0?'var(--red)':'var(--muted)';
         const opportunity = seg?.revenue_opportunity||0;
-        return `<tr${v.our_revenue>0?' class="or'+(A.dept==='ref'?' ref':'')+'"':''}>
+        return `<tr class="rowlink${v.our_revenue>0?' or'+(A.dept==='ref'?' ref':''):''}" onclick="if(!event.target.closest('a'))openVetkaDrill(${i})">
           <td class="rn">${i+1}</td>
           <td style="font-weight:${v.our_revenue>0?'500':'400'}">${escHtml(v.vetka)}</td>
           <td style="text-align:right">${fmtR(v.revenue)}</td>
@@ -1998,10 +2199,32 @@ async function renderABC(){
     const abCmpEl=document.getElementById('ab-ct');
     const existCmp=document.getElementById('abc-cmp');
     if(existCmp)existCmp.remove();
+    // Hero: two rings side-by-side (рынок vs наши) instead of a flat text line —
+    // much easier to scan the gap at a glance, and gives ABC its own signature look.
     const cmpDiv=document.createElement('div');
     cmpDiv.id='abc-cmp';
-    cmpDiv.style.cssText='background:var(--s1);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:13px';
-    cmpDiv.innerHTML=`<div>Рынок A: <strong style="color:var(--green)">${mAPct}%</strong></div><div style="color:var(--border)">|</div><div>Наши A: <strong style="color:${cmpColor}">${oAPct}%</strong></div><div style="color:var(--border)">|</div><div style="color:${cmpColor}">${cmpText}</div>`;
+    cmpDiv.className='sec';
+    cmpDiv.style.cssText='margin-bottom:20px';
+    cmpDiv.innerHTML=`<div class="sb2" style="display:flex;align-items:center;gap:32px;flex-wrap:wrap">
+      <div class="insight-item rowlink" style="display:flex;align-items:center;gap:10px;padding:4px" onclick="openAbcDrill('A')" title="Провалиться в товары категории A">
+        ${ringSvg(mAPct,'var(--green)',50,84)}
+        <div style="font-size:12px;color:var(--muted)">Рынок<br>A-товары</div>
+      </div>
+      <div class="insight-item rowlink" style="display:flex;align-items:center;gap:10px;padding:4px" onclick="openAbcDrill('A')" title="Провалиться в товары категории A">
+        ${ringSvg(oAPct,cmpColor,50,84)}
+        <div style="font-size:12px;color:var(--muted)">Наши<br>A-товары</div>
+      </div>
+      <div style="flex:1;min-width:200px">
+        <div class="hero-num" style="font-size:20px;color:${cmpColor};margin-bottom:4px">${diff>=0?'+':''}${diff.toFixed(1)}%</div>
+        <div style="font-size:13px;color:var(--muted)">${cmpText}</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${['A','B','C'].map(cat=>{
+          const col=cat==='A'?'var(--green)':cat==='B'?'var(--yellow)':'var(--red)';
+          return `<span class="rowlink" onclick="openAbcDrill('${cat}')" style="cursor:pointer;font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;background:${col}18;color:${col};border:1px solid ${col}44">ABC-${cat} · рынок ${d.market[cat]||0} · наши ${d.ours[cat]||0}</span>`;
+        }).join('')}
+      </div>
+    </div>`;
     abCmpEl.prepend(cmpDiv);
     const mkT=(id,rows,col)=>{
       g(id).innerHTML=rows&&rows.length
@@ -2201,10 +2424,10 @@ function _drillEsc(e){if(e.key==='Escape')closeDrill();}
 function drillPrCard(i){
   const o=(window._prOpps||[])[i];
   if(!o)return;
-  drillDown(o.drillApiName, o.drillVetka, o.drillLabel, o.title, o.drillMonth, o.drillSubtype, o.drillSegRevenue);
+  drillDown(o.drillApiName, o.drillVetka, o.drillLabel, o.title, o.drillMonth, o.drillSubtype, o.drillSegRevenue, o.drillBrand);
 }
 
-async function drillDown(apiName, vetka, deptLabel, oppTitle, month, subtype, segRevenue){
+async function drillDown(apiName, vetka, deptLabel, oppTitle, month, subtype, segRevenue, brand){
   const existing=document.getElementById('drill-modal');
   if(existing)existing.remove();
   document.removeEventListener('keydown',_drillEsc);
@@ -2251,7 +2474,12 @@ async function drillDown(apiName, vetka, deptLabel, oppTitle, month, subtype, se
     const allItems = allData?.items||[];
     const ours = allItems.filter(r=>r.is_ours).sort((a,b)=>b.revenue-a.revenue);
     const segItems = segData ? (segData.items||[]) : allItems;
-    const comps = segItems.filter(r=>!r.is_ours).sort((a,b)=>b.revenue-a.revenue).slice(0,25);
+    // When the card names a specific competitor brand ("Конкурент" opportunities),
+    // filter the competitor table to that brand — otherwise "Детально" showed the
+    // generic top-25-by-revenue table for the whole subtype, unrelated to the
+    // brand actually named in the card title.
+    const compsBase = brand ? segItems.filter(r=>!r.is_ours && (r.brand||'').toUpperCase()===brand.toUpperCase()) : segItems.filter(r=>!r.is_ours);
+    const comps = compsBase.sort((a,b)=>b.revenue-a.revenue).slice(0,25);
 
     // Разбиваем наши на: в целевом сегменте и в остальных
     const oursInSeg  = vetka ? ours.filter(r=>r.vetka===vetka) : ours;
@@ -2329,8 +2557,10 @@ async function drillDown(apiName, vetka, deptLabel, oppTitle, month, subtype, se
       : `Наши товары (${ours.length})`;
     const sec1Rows = vetka ? oursInSeg : ours;
 
-    // Секция 2: конкуренты в том же сегменте
-    const sec2Label = vetka ? `Конкуренты в «${vetka}» л (${comps.length})` : `Конкуренты — топ по выручке (${comps.length})`;
+    // Секция 2: конкуренты в том же сегменте (или конкретный бренд, если карточка про него)
+    const sec2Label = brand
+      ? `${brand} — товары${vetka?` в «${vetka}» л`:''} (${comps.length})`
+      : (vetka ? `Конкуренты в «${vetka}» л (${comps.length})` : `Конкуренты — топ по выручке (${comps.length})`);
 
     // Секция 3: наши в других сегментах (только когда есть vetka и есть такие товары)
     const sec3Html = vetka && oursOther.length ? `
@@ -2357,6 +2587,165 @@ async function drillDown(apiName, vetka, deptLabel, oppTitle, month, subtype, se
   }catch(e){
     document.getElementById('drill-body').innerHTML=`<div style="color:var(--red);padding:20px">${e.message}</div>`;
   }
+}
+
+// ── UNIVERSAL DRILL-DOWN — reusable across every tab. Filters /analytics/products
+//    by any combination of vetka / brand / abc and shows the matching SKUs (ours
+//    highlighted, competitors below), each with a Kaspi link. This is the same
+//    "provalitsya do tovarov" pattern as drillDown() above, generalized so any
+//    table row / card on any page (Ветки, Бренды, ABC-анализ, Тренды, Тактика)
+//    can open it, not just Приоритеты. ──
+function _chip(text,color){
+  return `<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:5px;background:${color}22;color:${color}">${text}</span>`;
+}
+async function drillGeneric(cfg){
+  const existing=document.getElementById('drill-modal');
+  if(existing)existing.remove();
+  document.removeEventListener('keydown',_drillEsc);
+  document.addEventListener('keydown',_drillEsc);
+  const modal=document.createElement('div');
+  modal.id='drill-modal';
+  modal.innerHTML=`
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)closeDrill()">
+      <div style="background:var(--s1);border:1px solid var(--border);border-radius:14px;width:calc(100% - 40px);max-width:1100px;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;margin:20px">
+        <div style="padding:14px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+            ${cfg.chips||''}
+            <button onclick="closeDrill()" style="margin-left:auto;background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:5px 12px;cursor:pointer;font-size:12px"><i class="ti ti-x"></i></button>
+          </div>
+          <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.4;max-width:740px">${cfg.title||''}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px" id="drill-sub">Загрузка…</div>
+        </div>
+        <div id="drill-body" style="overflow-y:auto;padding:16px 20px;flex:1">
+          <div style="text-align:center;padding:40px;color:var(--muted)"><div class="spin" style="margin:0 auto 12px"></div>Загружаю данные...</div>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  try{
+    const p=new URLSearchParams({department:cfg.apiName,limit:500,sort:'revenue'});
+    if(cfg.month)p.set('month',cfg.month);
+    if(cfg.subtype)p.set('subtype',cfg.subtype);
+    if(cfg.vetka)p.set('vetka',cfg.vetka);
+    if(cfg.brand)p.set('brand',cfg.brand);
+    if(cfg.abc)p.set('abc',cfg.abc);
+    const data=await apig('/analytics/products?'+p.toString());
+    const items=(data.items||[]).slice().sort((a,b)=>(b.revenue||0)-(a.revenue||0));
+    const ours=items.filter(r=>r.is_ours);
+    const comps=items.filter(r=>!r.is_ours);
+    const maxRev=Math.max(...items.map(r=>r.revenue||0),1);
+
+    const subEl=document.getElementById('drill-sub');
+    if(subEl)subEl.textContent=`Всего товаров: ${items.length} · наших: ${ours.length} · ранжировано по выручке`;
+
+    function thead(){
+      return `<thead><tr style="border-bottom:1px solid var(--border)">
+        <th style="padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);text-align:left">Товар</th>
+        <th style="padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);text-align:center">Ветка</th>
+        <th style="padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);text-align:right">Выручка/мес</th>
+        <th style="padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);text-align:center">Отзывы</th>
+        <th style="padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);text-align:center">Рейтинг</th>
+        <th style="padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);text-align:center">ABC</th>
+        <th style="padding:8px 10px"></th>
+      </tr></thead>`;
+    }
+    function row(r,highlight){
+      const bar=`<div style="width:${Math.round((r.revenue||0)/maxRev*80)}px;height:4px;background:${highlight?'var(--ice)':'var(--s3)'};border-radius:2px;margin-top:3px"></div>`;
+      const revBadge=highlight?`<span style="color:var(--ice);font-weight:700">${fmtR(r.revenue)}</span>`:`<span style="color:var(--muted)">${fmtR(r.revenue)}</span>`;
+      const revClr=(r.reviews||0)===0?'var(--red)':(r.reviews||0)<5?'var(--yellow)':'var(--green)';
+      const nm=r.name&&r.name.length>3?r.name:(r.kod||'—');
+      return `<tr style="border-bottom:1px solid var(--border);${highlight?'background:rgba(96,184,212,.04)':''}">
+        <td style="padding:8px 10px;max-width:260px">
+          <div style="font-size:12px;font-weight:${highlight?'600':'400'};color:${highlight?'var(--text)':'var(--muted)'}">${nm}</div>
+          <div style="font-size:11px;color:var(--muted)">${r.brand||''}</div>
+        </td>
+        <td style="padding:8px 10px;text-align:center"><span style="font-size:11px;padding:2px 8px;border-radius:4px;background:var(--s3);color:var(--muted)">${r.vetka||'—'}</span></td>
+        <td style="padding:8px 10px;text-align:right">${revBadge}${bar}</td>
+        <td style="padding:8px 10px;text-align:center"><span style="color:${revClr};font-weight:700">${r.reviews||0}</span></td>
+        <td style="padding:8px 10px;text-align:center">${(r.rating||0)>0?`<span style="color:${r.rating>=4.7?'var(--green)':r.rating>=4.5?'var(--yellow)':'var(--red)'}">${(+r.rating).toFixed(1)}★</span>`:'—'}</td>
+        <td style="padding:8px 10px;text-align:center"><span class="abc abc-${r.abc||'C'}">${r.abc||'—'}</span></td>
+        <td style="padding:8px 10px">${kLink(r.name,r.brand,true,r.vetka,r.kod)}</td>
+      </tr>`;
+    }
+
+    document.getElementById('drill-body').innerHTML=`
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--ice);margin-bottom:8px"><i class="ti ti-star-filled" style="font-size:11px"></i> Наши товары (${ours.length})</div>
+      ${ours.length
+        ?`<div class="tw" style="margin-bottom:20px"><table style="width:100%">${thead()}<tbody>${ours.map(r=>row(r,true)).join('')}</tbody></table></div>`
+        :`<div style="padding:12px 0 20px;color:var(--muted);font-size:12px">Нет наших товаров${cfg.vetka?' в этом сегменте':cfg.brand?' у этого бренда':cfg.abc?' в этой категории':''}</div>`}
+      ${comps.length?`
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:8px"><i class="ti ti-users" style="font-size:11px"></i> Конкуренты (${comps.length})</div>
+        <div class="tw"><table style="width:100%">${thead()}<tbody>${comps.slice(0,60).map(r=>row(r,false)).join('')}${comps.length>60?`<tr><td colspan="7" style="text-align:center;padding:10px;color:var(--muted);font-size:11px">…и ещё ${comps.length-60}</td></tr>`:''}</tbody></table></div>`:''}
+      ${!ours.length&&!comps.length?'<div style="text-align:center;padding:40px;color:var(--muted)">Нет данных</div>':''}`;
+  }catch(e){
+    const body=document.getElementById('drill-body');
+    if(body)body.innerHTML=`<div style="color:var(--red);padding:20px">${e.message}</div>`;
+  }
+}
+
+// ── Per-page drill wrappers — index-based (not raw strings in onclick) so vetka/
+//    brand names with quotes/special chars can never break the inline handler. ──
+function openVetkaDrill(i){
+  const v=(window._vtData||[])[i]; if(!v)return;
+  drillGeneric({
+    apiName:DA[A.dept], month:A.month||null, subtype:A.sub||null, vetka:v.vetka,
+    title:`Ветка «${escHtml(v.vetka)}»`,
+    chips:_chip(DL[A.dept],'var(--ice)')+(A.sub?_chip(A.sub,'var(--ice)'):'')+_chip(escHtml(v.vetka),'var(--yellow)'),
+  });
+}
+function openBrandDrill(i){
+  const b=(window._brData||[])[i]; if(!b)return;
+  drillGeneric({
+    apiName:DA[A.dept], month:A.month||null, subtype:A.sub||null, brand:b.brand,
+    title:`Бренд «${escHtml(b.brand)}»`,
+    chips:_chip(DL[A.dept],'var(--ice)')+(A.sub?_chip(A.sub,'var(--ice)'):'')+_chip(escHtml(b.brand),'var(--purple)'),
+  });
+}
+function openThreatDrill(i){
+  const t=(window._brThreats||[])[i]; if(!t)return;
+  drillGeneric({
+    apiName:DA[A.dept], month:A.month||null, subtype:A.sub||null, brand:t.brand,
+    title:`Конкурент «${escHtml(t.brand)}» — в наших сегментах`,
+    chips:_chip(DL[A.dept],'var(--ice)')+(A.sub?_chip(A.sub,'var(--ice)'):'')+_chip(escHtml(t.brand),'var(--red)'),
+  });
+}
+function openTrendDrill(kind,i){
+  let vetka=null, subtype=A.sub||null, title='', tagColor='var(--yellow)', tagText='';
+  if(kind==='seg'){ vetka=(window._trTopSeg||[])[i]; if(!vetka)return; tagText=vetka; title=`Сегмент «${escHtml(vetka)}»`; }
+  else if(kind==='losing'){ const s=(window._trLosing||[])[i]; if(!s)return; vetka=s.vetka; tagText=vetka; title=`Сегмент «${escHtml(vetka)}» — теряем долю`; tagColor='var(--red)'; }
+  else if(kind==='losingSub'){ const s=(window._trLosingSub||[])[i]; if(!s)return; subtype=s.subtype; tagText=subtype; title=`Тип «${escHtml(subtype)}» — теряем долю`; tagColor='var(--red)'; }
+  else if(kind==='winning'){ const s=(window._trWinning||[])[i]; if(!s)return; vetka=s.vetka; tagText=vetka; title=`Сегмент «${escHtml(vetka)}» — растём`; tagColor='var(--green)'; }
+  else if(kind==='subtype'){ subtype=(window._trSubNames||[])[i]; if(!subtype)return; tagText=subtype; title=`Тип «${escHtml(subtype)}»`; }
+  else return;
+  drillGeneric({
+    apiName:DA[A.dept], month:null, subtype, vetka, title,
+    chips:_chip(DL[A.dept],'var(--ice)')+_chip(escHtml(tagText),tagColor),
+  });
+}
+function openTrendBrandDrill(which,i){
+  const arr = which==='our' ? (window._trBrandsOur||[]) : (window._trBrandsComp||[]);
+  const b=arr[i]; if(!b)return;
+  drillGeneric({
+    apiName:DA[A.dept], month:null, subtype:A.sub||null, brand:b.brand,
+    title:`Бренд «${escHtml(b.brand)}»`,
+    chips:_chip(DL[A.dept],'var(--ice)')+(A.sub?_chip(A.sub,'var(--ice)'):'')+_chip(escHtml(b.brand),'var(--purple)'),
+  });
+}
+function openTacticsSegDrill(kind,i){
+  const v=(kind==='gap'?window._tcGaps:window._tcWeak||[])[i]; if(!v)return;
+  drillGeneric({
+    apiName:DA[A.dept], month:A.month||null, subtype:A.sub||null, vetka:v.vetka,
+    title:`Сегмент «${escHtml(v.vetka)}»${kind==='gap'?' — нас там нет':' — слабая доля'}`,
+    chips:_chip(DL[A.dept],'var(--ice)')+(A.sub?_chip(A.sub,'var(--ice)'):'')+_chip(escHtml(v.vetka),kind==='gap'?'var(--red)':'var(--yellow)'),
+  });
+}
+function openAbcDrill(cat){
+  drillGeneric({
+    apiName:DA[A.dept], month:A.month||null, subtype:A.sub||null, abc:cat,
+    title:`Категория ABC-${cat}`,
+    chips:_chip(DL[A.dept],'var(--ice)')+(A.sub?_chip(A.sub,'var(--ice)'):'')+_chip('ABC-'+cat,cat==='A'?'var(--green)':cat==='B'?'var(--yellow)':'var(--red)'),
+  });
 }
 
 // ── PRIORITY (единый рейтинг по деньгам — все категории, все подтипы) ──
@@ -2412,13 +2801,12 @@ async function renderPriority(){
     for(const D of active){
       const _dStartIdx = oppList.length;
       const dColor = D.code==='frz'?'var(--ice)':'var(--green)';
-      const vList   = D.vt?.vetka||[];
       const noRev   = D.st?.review_deficit?.no_reviews||[];
       const fewRev  = D.st?.review_deficit?.few_reviews||[];
       const lowRat  = D.st?.low_rating_skus||[];
       const roiPer  = D.intel?.review_roi_overall||0;
       const mom     = D.intel?.sku_momentum||{};
-      const threats = D.intel?.competitive_threats||[];
+      const segIntel = D.intel?.segment_intelligence||[];
       const ourA    = D.abc?.our_a_items||[];
 
       // Тег показывает: [Холод. витрины] [Ларь] — или просто [Морозильники] если нет подтипов
@@ -2453,6 +2841,7 @@ async function renderPriority(){
           money:`~${fmtR(estLoss)}/мес при добавлении 5 отзывов каждому`,
           action:`Начать с топ-${Math.min(5,noRevExcl.length)} по выручке`,
           links:noRevExcl.slice(0,4).map(s=>pill(s)).join('')+(noRevExcl.length>4?`<span class="pr-more">+${noRevExcl.length-4}</span>`:''),
+          calcNote:`ROI 1 отзыва по рынку (${roiPer>0?fmtR(roiPer):'нет данных'}) × 5 отзывов × ${noRevExcl.length} товар(ов); если ROI неизвестен — 30% текущей выручки этих товаров.`,
         });
       }
 
@@ -2468,6 +2857,7 @@ async function renderPriority(){
           money:`+${fmtR(est2)}/мес при достижении 5+ у всех`,
           action:`Дозаказать ${need} отзывов — начинать с тех у кого 1-2`,
           links:fewRevExcl.slice(0,4).map(s=>`<div class="pr-pill"><span>${(s.name||s.brand||s.kod||'').slice(0,22)}</span><span style="color:var(--yellow);font-size:11px;margin-left:4px">${s.reviews} отз.</span>${kLink(s.name,s.brand,true,s.vetka,s.kod)}</div>`).join('')+(fewRevExcl.length>4?`<span class="pr-more">+${fewRevExcl.length-4}</span>`:''),
+          calcNote:`ROI 1 отзыва (${roiPer>0?fmtR(roiPer):'нет данных'}) × ${need} недостающих отзывов; без данных ROI — 15% текущей выручки этих товаров.`,
         });
       }
 
@@ -2481,6 +2871,7 @@ async function renderPriority(){
           money:`${fmtR(totalAtRisk*0.25)}/мес под риском перехвата`,
           action:`Запустить отзывы на A-товары немедленно — защищаем ключевую выручку`,
           links:aRisk.slice(0,3).map(a=>pill(a)).join(''),
+          calcNote:`25% суммарной выручки A-товаров без отзывов (${fmtR(totalAtRisk)}/мес) — доля, которую типично перехватывает конкурент с отзывами.`,
         });
       }
 
@@ -2494,6 +2885,7 @@ async function renderPriority(){
           money:`+${fmtR(s.avg_monthly_revenue*0.3)}/мес при увеличении бюджета`,
           action:`Поднять Kaspi Ads, проверить склад, добавить SKU в этой ветке`,
           links:pill(s),
+          calcNote:`30% средней месячной выручки товара (${fmtR(s.avg_monthly_revenue)}/мес) — консервативная оценка при поддержке текущего роста +${s.momentum_pct}%/мес.`,
         });
       });
 
@@ -2508,33 +2900,37 @@ async function renderPriority(){
           money:`Останавливаем потерю ${fmtR(lost)}/мес`,
           action:`Сегодня: проверить цену конкурентов, количество отзывов, наличие товара`,
           links:pill(s),
+          calcNote:`Текущий темп падения ${Math.abs(s.momentum_pct)}%/мес × средняя выручка (${fmtR(s.avg_monthly_revenue)}/мес) — сумма, теряемая каждый месяц без вмешательства.`,
         });
       });
 
-      // ⑥ Слабая доля в существующих сегментах (medium)
-      const weak=vList.filter(v=>v.our_revenue>0&&v.our_share_pct<10).sort((a,b)=>b.revenue-a.revenue);
-      weak.slice(0,2).forEach(v=>{
-        const pot=Math.max(0,v.revenue*0.15-(v.our_revenue||0));
+      // ⑥+⑨ Сегментные возможности — "слабая доля" (мы уже там, доля <10% или
+      // просто не лидируем) и "нас там нет" объединены в один источник:
+      // D.intel.segment_intelligence, тот же revenue_opportunity (потенциал до
+      // доли ЛИДЕРА сегмента), что использует вкладка «Тактика». Раньше здесь
+      // был свой расчёт (плоская цель 15% / 5%) — из-за этого один и тот же
+      // сегмент показывал разные цифры на двух вкладках. Конкурентов (бывший
+      // блок ⑦) больше не генерируем здесь по одному на combo — они собираются
+      // и объединяются по бренду один раз на департамент, после этого цикла.
+      const segOpps = segIntel
+        .filter(s=>s.months_campaign!==0 && (s.revenue_opportunity||0)>0)
+        .sort((a,b)=>(b.revenue_opportunity||0)-(a.revenue_opportunity||0));
+      segOpps.slice(0,2).forEach(s=>{
+        const isGap = !(s.our_share_pct>0);
         oppList.push({
-          effort:'medium', impact:pot, cat:'Доля', catColor:'var(--yellow)', icon:'ti-trending-up', dTag, drillVetka:v.vetka, drillSegRevenue:v.revenue,
-          title:`«${v.vetka}» — наша доля ${v.our_share_pct.toFixed(1)}% из ${fmtR(v.revenue)}/мес`,
-          context:`Зарабатываем ${fmtR(v.our_revenue)}/мес в этом сегменте.${v.leader_brand?` Лидер — ${v.leader_brand}.`:''} Рост с ${v.our_share_pct.toFixed(1)}% до 15% добавит +${fmtR(pot)}/мес — мы уже в сегменте, просто усиливаем позицию.`,
-          money:`+${fmtR(pot)}/мес при доле 15%`,
-          action:`Снизить цену или добавить SKU в этом диапазоне`,
-          links:v.leader_brand?pill({name:v.leader_name,brand:v.leader_brand,kod:v.leader_kod,vetka:v.vetka},'Лидер: '+v.leader_brand):'',
-        });
-      });
-
-      // ⑦ Конкуренты top-3 (medium)
-      threats.slice(0,3).forEach(t=>{
-        const trendTxt = t.avg_momentum_pct>0?` Растёт ${t.avg_momentum_pct}%/мес — ускоряется.`:t.avg_momentum_pct<0?` Падает ${Math.abs(t.avg_momentum_pct)}%/мес — момент для атаки.`:'';
-        oppList.push({
-          effort:'medium', impact:t.revenue*0.08, cat:'Конкурент', catColor:'var(--red)', icon:'ti-alert-triangle', dTag,
-          title:`${t.brand} зарабатывает ${fmtR(t.revenue)}/мес в наших сегментах`,
-          context:`Работает в ${t.vetkas_count||'нескольких'} наших сегментах — прямо отбирает покупателей.${trendTxt} Нужно понять: цена, отзывы или ассортимент?`,
-          money:`~${fmtR(t.revenue*0.08)}/мес потенциал перехвата`,
-          action:`Открыть топ-товар конкурента, сравнить цену и отзывы с нашими`,
-          links:pill({name:t.top_name,brand:t.brand,kod:t.top_kod},'Топ: '+t.brand),
+          effort: isGap?'hard':'medium', impact:s.revenue_opportunity||0,
+          cat: isGap?'Сегмент':'Доля', catColor: isGap?'var(--blue)':'var(--yellow)',
+          icon: isGap?'ti-map-pin-plus':'ti-trending-up', dTag, drillVetka:s.vetka, drillSegRevenue:s.market_revenue,
+          title: isGap
+            ? `Сегмент «${s.vetka}»${D.subtype?` (${D.subtype})`:''} — ${fmtR(s.market_revenue)}/мес, нас там нет`
+            : `«${s.vetka}»${D.subtype?` (${D.subtype})`:''} — наша доля ${s.our_share_pct.toFixed(1)}% из ${fmtR(s.market_revenue)}/мес`,
+          context: isGap
+            ? `${s.leader_brand?`Лидер — ${s.leader_brand}. `:''}Нужен новый SKU. Потенциал до доли лидера: +${fmtR(s.revenue_opportunity)}/мес. Требует 2-3 месяца на запуск и набор отзывов.`
+            : `${s.leader_brand?`Лидер — ${s.leader_brand}. `:''}Рост до доли лидера добавит +${fmtR(s.revenue_opportunity)}/мес — мы уже в сегменте, просто усиливаем позицию.`,
+          money:`+${fmtR(s.revenue_opportunity)}/мес до уровня лидера`,
+          action: isGap ? `Изучить топ-3 конкурентов в сегменте, найти незанятую ценовую нишу` : `Снизить цену или добавить SKU в этом диапазоне`,
+          links: s.leader_brand?`<div class="pr-pill"><span>${('Лидер: '+s.leader_brand).slice(0,28)}</span>${kLink(s.leader_name||'',s.leader_brand,true,s.vetka,s.leader_kod||'')}</div>`:'',
+          calcNote:`Потенциал до доли лидера сегмента (${fmtR(s.revenue_opportunity)}/мес) — та же методика, что и на вкладке «Тактика», поэтому цифры по одному сегменту не расходятся между вкладками.`,
         });
       });
 
@@ -2549,21 +2945,9 @@ async function renderPriority(){
           money:`~${fmtR(tot)}/мес потенциал при росте рейтинга`,
           action:`Прочитать все негативные отзывы — найти повторяющуюся причину`,
           links:wst.map(s=>`<div class="pr-pill"><span>${(s.name||s.brand||s.kod||'').slice(0,22)}</span><span style="color:var(--red);font-size:11px;margin-left:4px">${(+s.rating).toFixed(1)}★</span>${kLink(s.name,s.brand,true,s.vetka,s.kod)}</div>`).join(''),
+          calcNote:`15% выручки худших по рейтингу товаров — потенциал при выходе на уровень 4.5★+.`,
         });
       }
-
-      // ⑨ Новые сегменты — нас там нет (hard)
-      const gaps=vList.filter(v=>v.our_revenue===0).sort((a,b)=>b.revenue-a.revenue);
-      gaps.slice(0,2).forEach(v=>{
-        oppList.push({
-          effort:'hard', impact:v.revenue*0.05, cat:'Сегмент', catColor:'var(--blue)', icon:'ti-map-pin-plus', dTag, drillVetka:v.vetka, drillSegRevenue:v.revenue,
-          title:`Сегмент «${v.vetka}» — ${fmtR(v.revenue)}/мес, нас там нет`,
-          context:`${v.leader_brand?`Лидер — ${v.leader_brand}. `:''}Нужен новый SKU. Вход с 5% доли = ${fmtR(v.revenue*0.05)}/мес, с 15% = ${fmtR(v.revenue*0.15)}/мес. Требует 2-3 месяца на запуск и набор отзывов.`,
-          money:`+${fmtR(v.revenue*0.05)}/мес при 5% доли`,
-          action:`Изучить топ-3 конкурентов в сегменте, найти незанятую ценовую нишу`,
-          links:v.leader_brand?pill({name:v.leader_name,brand:v.leader_brand,kod:v.leader_kod,vetka:v.vetka},'Лидер: '+v.leader_brand):'',
-        });
-      });
 
       // Проставляем drill-параметры — subtype гарантирует что Детально фильтрует правильно
       const drillLabelFull = D.subtype ? `${D.parentLabel} · ${D.subtype}` : D.label;
@@ -2574,7 +2958,53 @@ async function renderPriority(){
         oppList[_i].drillSubtype   = D.subtype||null;
         if(!oppList[_i].drillVetka)     oppList[_i].drillVetka = null;
         if(!oppList[_i].drillSegRevenue) oppList[_i].drillSegRevenue = null;
+        if(!oppList[_i].drillBrand)     oppList[_i].drillBrand = null;
       }
+    }
+
+    // ⑦ Конкуренты — один раз на департамент, объединяя все подтипы. Раньше
+    // каждый (департамент,подтип) генерировал свои top-3 конкурента отдельно,
+    // так что один и тот же бренд (например AVANGARD) занимал 2-3 почти
+    // одинаковые карточки подряд ("AVANGARD зарабатывает 4.2 млн — Ларь",
+    // "AVANGARD зарабатывает 4.1 млн — Ветрина"...). Здесь суммируем выручку
+    // и метрики того же бренда по всем подтипам ОДНОГО департамента (разные
+    // департаменты — разные рынки, их не объединяем) и даём одну карточку.
+    const byDept = {};
+    for(const D of active){ (byDept[D.code] = byDept[D.code]||[]).push(D); }
+    for(const deptCode of Object.keys(byDept)){
+      const combos = byDept[deptCode];
+      const dColor = deptCode==='frz'?'var(--ice)':'var(--green)';
+      const dTag = `<span style="font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;background:${dColor}22;color:${dColor};flex-shrink:0">${combos[0].parentLabel}</span>`;
+      const merged = {};
+      for(const D of combos){
+        for(const t of (D.intel?.competitive_threats||[])){
+          const m = merged[t.brand] || (merged[t.brand] = {
+            brand:t.brand, revenue:0, vetkasTotal:0, subtypes:new Set(),
+            momentumWeighted:0, topRevenueInCombo:0, top_kod:'', top_name:'',
+          });
+          m.revenue += t.revenue||0;
+          m.vetkasTotal += t.vetkas_count||0;
+          m.momentumWeighted += (t.avg_momentum_pct||0)*(t.revenue||0);
+          if(D.subtype) m.subtypes.add(D.subtype);
+          if((t.revenue||0) > m.topRevenueInCombo){ m.topRevenueInCombo=t.revenue||0; m.top_kod=t.top_kod||''; m.top_name=t.top_name||''; }
+        }
+      }
+      Object.values(merged).sort((a,b)=>b.revenue-a.revenue).slice(0,3).forEach(t=>{
+        const avgMom = t.revenue>0 ? t.momentumWeighted/t.revenue : 0;
+        const trendTxt = avgMom>5?` Растёт ${avgMom.toFixed(1)}%/мес — ускоряется.`:avgMom<-5?` Падает ${Math.abs(avgMom).toFixed(1)}%/мес — момент для атаки.`:'';
+        const subtypesLabel = t.subtypes.size ? ` (${[...t.subtypes].join(', ')})` : '';
+        oppList.push({
+          effort:'medium', impact:t.revenue*0.08, cat:'Конкурент', catColor:'var(--red)', icon:'ti-alert-triangle', dTag, drillBrand:t.brand,
+          title:`${t.brand} зарабатывает ${fmtR(t.revenue)}/мес в наших сегментах${subtypesLabel}`,
+          context:`Работает в ${t.vetkasTotal||'нескольких'} наших сегментах суммарно по всем типам товара — прямо отбирает покупателей.${trendTxt} Нужно понять: цена, отзывы или ассортимент?`,
+          money:`~${fmtR(t.revenue*0.08)}/мес потенциал перехвата`,
+          action:`Открыть топ-товар конкурента, сравнить цену и отзывы с нашими`,
+          links:`<div class="pr-pill"><span>${('Топ: '+t.brand).slice(0,28)}</span>${kLink(t.top_name||'',t.brand,true,'',t.top_kod||'')}</div>`,
+          calcNote:`8% суммарной выручки конкурента во всех наших подтипах этого департамента (${fmtR(t.revenue)}/мес) — консервативная оценка доли перехвата.`,
+          drillApiName: DA[deptCode], drillLabel: combos[0].parentLabel, drillMonth: combos[0].latestMonth||null,
+          drillSubtype: null, drillVetka: null, drillSegRevenue: null,
+        });
+      });
     }
 
     oppList.sort((a,b)=>b.impact-a.impact);
@@ -2596,10 +3026,12 @@ async function renderPriority(){
     const dataDate = active[0]?.latestMonth || '—';
     const deptNames = [...new Set(active.map(d=>d.parentLabel))].join(' · ');
 
-    // ── ФОКУС НЕДЕЛИ (топ-3 быстрых) ──
+    // ── топ-3 быстрых — не дублируем карточками, помечаем меткой ТОП в общем списке ──
     const top3 = allFast.slice(0,3);
+    window._prTop3Idx = top3.map(o=>oppList.indexOf(o));
+
     g('pr2-summary').innerHTML=`
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-bottom:14px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-bottom:10px">
         <div style="background:var(--s1);border:1px solid rgba(63,185,80,.3);border-top:3px solid var(--green);border-radius:10px;padding:14px 16px">
           <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px"><i class="ti ti-bolt" style="font-size:11px"></i> Быстрые победы</div>
           <div style="font-size:22px;font-weight:800;color:var(--green)">${fmtR(fastPot)}<span style="font-size:11px;font-weight:400">/мес</span></div>
@@ -2616,22 +3048,9 @@ async function renderPriority(){
           <div style="font-size:11px;color:var(--muted);margin-top:3px">${dataDate}</div>
         </div>
       </div>
-      <div style="background:linear-gradient(135deg,rgba(47,129,247,.05),rgba(96,184,212,.04));border:1px solid rgba(96,184,212,.2);border-radius:12px;padding:16px 18px;margin-bottom:4px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--ice);margin-bottom:12px"><i class="ti ti-crosshair" style="font-size:12px"></i> Фокус этой недели — сделать в первую очередь</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
-          ${top3.map((o,fi)=>{
-            const di=oppList.indexOf(o);
-            return `<div style="background:var(--s1);border:1px solid ${o.catColor}44;border-top:3px solid ${o.catColor};border-radius:9px;padding:12px 14px">
-              <div style="font-size:11px;font-weight:700;color:${o.catColor};text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">#${fi+1} · ${o.cat}</div>
-              <div style="font-size:12px;font-weight:700;color:var(--text);line-height:1.4;margin-bottom:6px">${o.title}</div>
-              <div style="font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:10px">→ ${o.action}</div>
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-                <span style="font-size:14px;font-weight:800;color:var(--green)">${fmtR(o.impact)}<span style="font-size:11px;font-weight:400">/мес</span></span>
-                <button onclick="drillPrCard(${di})" style="padding:4px 10px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--s2);color:var(--muted)"><i class="ti ti-table-down" style="font-size:11px"></i> Детально</button>
-              </div>
-            </div>`;
-          }).join('')}
-        </div>
+      <div style="display:flex;align-items:flex-start;gap:8px;font-size:11.5px;color:var(--muted);background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:4px;line-height:1.5">
+        <i class="ti ti-info-circle" style="color:var(--ice);font-size:15px;flex-shrink:0;margin-top:1px"></i>
+        <span>«Потенциал» — оценка доп. выручки в месяц, формула своя для каждого типа (доля рынка, ROI отзывов на рынке, темп роста/падения). Наведите на значок <i class="ti ti-info-circle" style="font-size:11px"></i> рядом с суммой в карточке — увидите точный расчёт. Первые ${top3.length} «Быстрые победы» ниже помечены меткой <b style="color:var(--green)">ТОП</b> — начните с них.</span>
       </div>`;
 
     renderPrCards();
@@ -2642,6 +3061,11 @@ function togglePrDone(i){
   if(!window._prDone) window._prDone = new Set();
   if(window._prDone.has(i)) window._prDone.delete(i); else window._prDone.add(i);
   try{localStorage.setItem('prDone', JSON.stringify([...window._prDone]));}catch{}
+  renderPrCards();
+}
+function togglePrExpand(i){
+  if(!window._prExpanded) window._prExpanded = new Set();
+  if(window._prExpanded.has(i)) window._prExpanded.delete(i); else window._prExpanded.add(i);
   renderPrCards();
 }
 function setPrFilter(key, val){
@@ -2685,30 +3109,40 @@ function renderPrCards(){
     ${doneCount>0?`<span style="margin-left:auto;font-size:11px;color:var(--green);font-weight:600">✓ Выполнено: ${doneCount}</span>`:''}
   </div>`;
 
+  const expandedSet = window._prExpanded || new Set();
+  const top3Idx = window._prTop3Idx || [];
+
   function cardHtml(o, displayNum){
     const di = oppList.indexOf(o);
     const isDone = done.has(di);
+    const isTop = !isDone && top3Idx.includes(di);
+    const expanded = expandedSet.has(di);
     const pct = totalRev>0 ? Math.round(o.impact/totalRev*100) : 0;
-    return `<div style="background:var(--s1);border:1px solid ${isDone?'var(--border)':o.catColor+'55'};border-left:4px solid ${isDone?'var(--border)':o.catColor};border-radius:10px;padding:14px 16px;margin-bottom:8px;${isDone?'opacity:.4':''}">
+    const delay = Math.min(displayNum-1,6)*30;
+    return `<div class="kpi-pop" style="animation-delay:${delay}ms;background:var(--s1);border:1px solid ${isDone?'var(--border)':isTop?'var(--green)':o.catColor+'55'};border-left:4px solid ${isDone?'var(--border)':o.catColor};border-radius:10px;padding:14px 16px;margin-bottom:8px;${isDone?'opacity:.4':''}">
       <div style="display:flex;gap:12px;align-items:flex-start">
         <div style="min-width:26px;height:26px;border-radius:6px;background:${isDone?'var(--s3)':o.catColor+'22'};border:1px solid ${isDone?'var(--border)':o.catColor+'55'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;font-weight:800;color:${isDone?'var(--muted)':o.catColor}">${isDone?'✓':displayNum}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:14px;font-weight:700;color:${isDone?'var(--muted)':'var(--text)'};line-height:1.3;margin-bottom:7px;${isDone?'text-decoration:line-through':''}">${o.title}</div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:7px">
+            ${isTop?`<span style="font-size:10px;font-weight:800;letter-spacing:.5px;color:#0B0B0D;background:var(--green);padding:2px 6px;border-radius:4px;flex-shrink:0">ТОП</span>`:''}
+            <div style="font-size:14px;font-weight:700;color:${isDone?'var(--muted)':'var(--text)'};line-height:1.3;${isDone?'text-decoration:line-through':''}">${o.title}</div>
+          </div>
           <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">
             ${o.dTag}
             <span style="background:${o.catColor}22;color:${o.catColor};padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700"><i class="ti ${o.icon}" style="font-size:11px"></i> ${o.cat}</span>
             <span style="color:${EC[o.effort]};font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;border:1px solid ${EC[o.effort]}44">${EL[o.effort]}</span>
           </div>
-          <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:8px">${o.context}</div>
           <div style="font-size:12px;color:var(--text);padding:7px 10px;background:var(--s2);border-radius:6px;border-left:3px solid ${o.catColor};margin-bottom:8px">→ ${o.action}</div>
-          ${o.links?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">${o.links}</div>`:''}
+          <button onclick="togglePrExpand(${di})" style="background:none;border:none;padding:0;cursor:pointer;font-size:11px;color:var(--ice);font-weight:600;display:flex;align-items:center;gap:3px;margin-bottom:${expanded?'8px':'8px'}"><i class="ti ti-chevron-${expanded?'up':'down'}" style="font-size:11px"></i> ${expanded?'Скрыть обоснование':'Почему это приоритет?'}</button>
+          ${expanded?`<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:8px">${o.context}</div>`:''}
+          ${expanded&&o.links?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">${o.links}</div>`:''}
           <div style="display:flex;gap:6px">
             <button onclick="togglePrDone(${di})" style="padding:5px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid ${isDone?'var(--green)':'var(--border)'};background:${isDone?'rgba(63,185,80,.1)':'transparent'};color:${isDone?'var(--green)':'var(--muted)'}"><i class="ti ti-check" style="font-size:11px"></i> ${isDone?'Выполнено':'Отметить выполненным'}</button>
             <button onclick="drillPrCard(${di})" style="padding:5px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text)"><i class="ti ti-table-down" style="font-size:11px"></i> Детально</button>
           </div>
         </div>
-        <div style="text-align:right;flex-shrink:0;min-width:80px">
-          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Потенциал</div>
+        <div style="text-align:right;flex-shrink:0;min-width:90px">
+          <div style="display:flex;align-items:center;justify-content:flex-end;gap:3px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Потенциал <i class="ti ti-info-circle" title="${(o.calcNote||'').replace(/"/g,'&quot;')}" style="font-size:12px;cursor:help"></i></div>
           <div style="font-size:15px;font-weight:800;color:${isDone?'var(--muted)':o.catColor};margin:2px 0">${fmtR(o.impact)}</div>
           ${pct>0?`<div style="font-size:11px;color:var(--muted)">≈ ${pct}% выручки</div>`:''}
         </div>
@@ -2778,7 +3212,7 @@ async function renderTrends(){
         <div class="kl">Рынок (${last.month||''})</div>
         <div class="kv">${fmtR(last.revenue||0)}</div>
         <div class="ks">${deltaChip(mktGrowth)} vs ${first.month||''}</div></div>
-      <div class="kc"><div class="kc-ic" style="background:rgba(47,129,247,.12);color:var(--blue)"><i class="ti ti-chart-line"></i></div>
+      <div class="kc"><div class="kc-ic" style="background:rgba(99,102,241,.12);color:var(--blue)"><i class="ti ti-chart-line"></i></div>
         <div class="kl">Наша выручка (${last.month||''})</div>
         <div class="kv">${fmtR(last.our_revenue||0)}</div>
         <div class="ks">${deltaChip(ourGrowth)} vs ${first.month||''}</div></div>
@@ -2812,7 +3246,7 @@ async function renderTrends(){
         <div class="sb2">
           <div style="position:relative;height:clamp(200px,22vh,300px)"><canvas id="${chartId1}"></canvas></div>
           <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
-            <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px"><span style="width:10px;height:4px;background:#30363D;border-radius:2px;display:inline-block"></span>Рынок</span>
+            <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px"><span style="width:10px;height:4px;background:#2A2A30;border-radius:2px;display:inline-block"></span>Рынок</span>
             <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px"><span style="width:10px;height:4px;background:${dc()};border-radius:2px;display:inline-block"></span>Наши</span>
             <span style="font-size:11px;color:var(--muted);margin-left:4px"><i class="ti ti-info-circle" style="font-size:11px"></i> Две оси Y: левая — весь рынок, правая — наши. Линии не в одном масштабе.</span>
           </div>
@@ -2836,7 +3270,8 @@ async function renderTrends(){
         const series = byVetka[v];
         return series.some(s=>s.our_revenue>0);
       });
-      const segRows = presentVetkas.map(v=>{
+      window._trTopSeg=presentVetkas;
+      const segRows = presentVetkas.map((v,vi)=>{
         const series = byVetka[v];
         const withUs = series.filter(s=>s.our_revenue>0);
         const firstS = withUs[0]||series[0]||{};
@@ -2846,7 +3281,7 @@ async function renderTrends(){
         const dColor = parseFloat(shareDelta)>0?'var(--green)':parseFloat(shareDelta)<0?'var(--red)':'var(--muted)';
         const lastShare = lastS.our_share_pct||0;
         const shareColor = lastShare>=20?'var(--green)':lastShare>=8?'var(--yellow)':lastShare>0?'var(--red)':'var(--muted)';
-        return `<tr>
+        return `<tr class="rowlink" onclick="openTrendDrill('seg',${vi})">
           <td style="font-size:12px;font-weight:500">${v}</td>
           <td>${fmtR(totalRev)}</td>
           <td style="color:${shareColor};font-weight:600">${lastShare.toFixed(1)}%</td>
@@ -2865,7 +3300,9 @@ async function renderTrends(){
     // ── Where we're LOSING share ──────────────────────────────────────────────
     let losingHtml = '';
     if(losing.length||losingSub.length){
-      const rows1 = losing.map(s=>`<tr>
+      window._trLosing=losing;
+      window._trLosingSub=losingSub;
+      const rows1 = losing.map((s,si)=>`<tr class="rowlink" onclick="openTrendDrill('losing',${si})">
         <td style="font-size:12px;font-weight:500">${s.vetka}</td>
         <td>${fmtR(s.market_revenue)}</td>
         <td>${fmtR(s.our_revenue)}</td>
@@ -2874,7 +3311,7 @@ async function renderTrends(){
         <td><span style="color:var(--red);font-weight:700">${s.delta_pct.toFixed(1)}%</span></td>
       </tr>`).join('');
 
-      const subRows = losingSub.map(s=>`<tr>
+      const subRows = losingSub.map((s,si)=>`<tr class="rowlink" onclick="openTrendDrill('losingSub',${si})">
         <td style="font-size:12px;font-weight:500"><span style="font-size:11px;padding:1px 6px;border-radius:4px;background:rgba(248,81,73,.1);color:var(--red);margin-right:4px">тип</span>${s.subtype}</td>
         <td>${fmtR(s.market_revenue)}</td>
         <td>—</td>
@@ -2900,7 +3337,8 @@ async function renderTrends(){
     // ── Where we're WINNING ───────────────────────────────────────────────────
     let winningHtml = '';
     if(winning.length){
-      const wRows = winning.map(s=>`<tr>
+      window._trWinning=winning;
+      const wRows = winning.map((s,si)=>`<tr class="rowlink" onclick="openTrendDrill('winning',${si})">
         <td style="font-size:12px;font-weight:500">${s.vetka}</td>
         <td>${fmtR(s.market_revenue)}</td>
         <td style="color:var(--muted)">${s.first_share_pct.toFixed(1)}%</td>
@@ -2920,8 +3358,9 @@ async function renderTrends(){
     // ── Subtype summary (lightweight) ────────────────────────────────────────
     let subTypeHtml = '';
     const subNames = Object.keys(bySub);
+    window._trSubNames=subNames;
     if(subNames.length>0){
-      const subRows2 = subNames.map(t=>{
+      const subRows2 = subNames.map((t,ti)=>{
         const series = bySub[t];
         const firstS = series[0]||{};
         const lastS  = series[series.length-1]||{};
@@ -2930,7 +3369,7 @@ async function renderTrends(){
         const lastShare = lastS.our_share_pct||0;
         const shareColor = lastShare>=20?'var(--green)':lastShare>=10?'var(--yellow)':lastShare>0?'var(--red)':'var(--muted)';
         const dColor = parseFloat(sDelta)>0?'var(--green)':parseFloat(sDelta)<0?'var(--red)':'var(--muted)';
-        return `<tr>
+        return `<tr class="rowlink" onclick="openTrendDrill('subtype',${ti})">
           <td style="font-size:12px;font-weight:500">${t}</td>
           <td>${fmtR(totRev)}</td>
           <td style="color:${shareColor};font-weight:600">${lastShare.toFixed(1)}%</td>
@@ -2993,12 +3432,12 @@ async function renderTrends(){
     </div>`;
 
     // ── Brands: split our vs competitors ────────────────────────────────────
-    function brandRow(b, rank){
+    function brandRow(b, rank, which, idx){
       const trendColor = b.trend_pct==null?'var(--muted)':b.trend_pct>0?'var(--green)':b.trend_pct<0?'var(--red)':'var(--muted)';
       const trendStr   = b.trend_pct!=null?(b.trend_pct>0?'+':'')+b.trend_pct+'%':'—';
       const firstV = b.months[0]||0;
       const lastV  = b.months[b.months.length-1]||0;
-      return `<tr>
+      return `<tr class="rowlink" onclick="openTrendBrandDrill('${which}',${idx})">
         <td style="font-size:12px;color:var(--muted);width:28px">#${rank}</td>
         <td style="font-size:12px;font-weight:500">${b.brand}</td>
         <td>${fmtR(b.total)}</td>
@@ -3007,8 +3446,10 @@ async function renderTrends(){
       </tr>`;
     }
 
-    const ourBrandRows = ourBrandsData.map((b,i)=>brandRow(b,i+1)).join('');
-    const topCompRows  = byBrand.filter(b=>!b.is_ours).slice(0,10).map((b,i)=>brandRow(b,i+1)).join('');
+    window._trBrandsOur = ourBrandsData;
+    window._trBrandsComp = byBrand.filter(b=>!b.is_ours).slice(0,10);
+    const ourBrandRows = ourBrandsData.map((b,i)=>brandRow(b,i+1,'our',i)).join('');
+    const topCompRows  = window._trBrandsComp.map((b,i)=>brandRow(b,i+1,'comp',i)).join('');
 
     const brandHtml = `
     <div class="g2" style="margin-bottom:16px">
@@ -3069,7 +3510,7 @@ async function renderTrends(){
            display:true,
            position:'top',
            labels:{
-             color:'#E6EDF3',
+             color:'#F2F2F5',
              font:{size:12},
              padding:16,
              usePointStyle:true,
@@ -3133,7 +3574,7 @@ async function renderRRC(){
     const TACTIC_CFG={
       'ниже_рынка': {color:'var(--green)',bg:'rgba(63,185,80,.12)',label:'Ниже рынка ↓'},
       'выше_рынка': {color:'var(--red)',  bg:'rgba(248,81,73,.12)', label:'Выше рынка ↑'},
-      'в_рынке':    {color:'var(--blue)', bg:'rgba(47,129,247,.12)',label:'В рынке ✓'},
+      'в_рынке':    {color:'var(--blue)', bg:'rgba(99,102,241,.12)',label:'В рынке ✓'},
       'нет_данных': {color:'var(--muted)',bg:'rgba(100,110,120,.1)', label:'Нет данных'},
     };
     const tacBadge=t=>{
@@ -3153,11 +3594,11 @@ async function renderRRC(){
     if(sumEl){
       const total=sm.total_vetkas||byVetka.length;
       sumEl.innerHTML=`
-        <div class="kc"><div class="kc-ic" style="background:rgba(47,129,247,.12);color:var(--blue)"><i class="ti ti-ruler-measure"></i></div>
+        <div class="kc"><div class="kc-ic" style="background:rgba(99,102,241,.12);color:var(--blue)"><i class="ti ti-ruler-measure"></i></div>
           <div class="kc-v">${total}</div><div class="kc-l">Веток всего</div></div>
         <div class="kc"><div class="kc-ic" style="background:rgba(63,185,80,.12);color:var(--green)"><i class="ti ti-trending-down"></i></div>
           <div class="kc-v">${sm.below_market||0}</div><div class="kc-l">Ниже рынка</div></div>
-        <div class="kc"><div class="kc-ic" style="background:rgba(47,129,247,.12);color:var(--blue)"><i class="ti ti-minus"></i></div>
+        <div class="kc"><div class="kc-ic" style="background:rgba(99,102,241,.12);color:var(--blue)"><i class="ti ti-minus"></i></div>
           <div class="kc-v">${sm.in_market||0}</div><div class="kc-l">В рынке</div></div>
         <div class="kc"><div class="kc-ic" style="background:rgba(248,81,73,.12);color:var(--red)"><i class="ti ti-trending-up"></i></div>
           <div class="kc-v">${sm.above_market||0}</div><div class="kc-l">Выше рынка</div></div>
@@ -3346,9 +3787,30 @@ async function renderTactics(){
     const statusClass=score>=70?'good':score>=40?'warn':'danger';
     const statusIcon=score>=70?'ti-circle-check':score>=40?'ti-alert-triangle':'ti-alert-circle';
 
-    g('tc-status').innerHTML=`<div class="tac-status ${statusClass}"><i class="ti ${statusIcon}"></i>${scoreLabel} — ${DL[A.dept]}${A.sub?' / '+A.sub:''}</div>`;
+    // ── TACTICS HERO — big score gauge instead of a text-only banner.
+    // This is the page's signature visual: the one number that answers
+    // "are we ok" for this department, shown the way a credit/health score would be.
+    g('tc-status').innerHTML=`
+      <div class="sec" style="margin-bottom:20px">
+        <div class="sb2" style="display:flex;align-items:center;gap:28px;flex-wrap:wrap">
+          ${ringSvg(score,scoreColor,100,110,'')}
+          <div style="flex:1;min-width:200px">
+            <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Общий счёт — ${DL[A.dept]}${A.sub?' / '+A.sub:''}</div>
+            <div class="hero-num" style="font-size:26px;color:${scoreColor};margin-bottom:10px">${scoreLabel}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:14px">
+              ${_scoreBreakdown.map(b=>`<div style="min-width:110px">
+                <div style="font-size:11px;color:var(--muted);margin-bottom:3px">${b.label} · ${b.hint}</div>
+                <div style="height:5px;background:var(--s3);border-radius:3px;overflow:hidden;width:100px">
+                  <div style="height:100%;width:${Math.round(b.pts/b.max*100)}%;background:${scoreColor};border-radius:3px"></div>
+                </div>
+              </div>`).join('')}
+            </div>
+          </div>
+        </div>
+      </div>`;
 
     // ── ЕДИНЫЙ ПРИОРИТЕТ: куда идут деньги прямо сейчас ──
+    let topSegOpp = null; // shared with "Что делать прямо сейчас" so both sections agree on the number
     {
       // Collect every opportunity with a ₸ estimate, rank by impact
       const opps = [];
@@ -3378,25 +3840,50 @@ async function renderTactics(){
         });
       }
 
-      // 3. Largest gap vetka (we're not in it)
-      const gap1 = gaps[0];
-      if(gap1){
-        const impact3 = (gap1.revenue||0) * 0.05;
+      // 3. Segment opportunities — biggest revenue upside, whether we have
+      // zero presence (gap) or weak presence (<10% share). Sourced from the
+      // same segIntel.revenue_opportunity used by "План захвата сегментов"
+      // below, so the two sections never disagree on the number. This also
+      // means weak-share segments (e.g. 0.8% share on a 230M market) compete
+      // for the top spot instead of being invisible to this ranking.
+      const segOppsSorted = segIntel
+        .filter(s=>s.months_campaign!==0 && (s.revenue_opportunity||0)>0)
+        .sort((a,b)=>(b.revenue_opportunity||0)-(a.revenue_opportunity||0));
+      segOppsSorted.slice(0,2).forEach((s,idx)=>{
+        const isGap = !(s.our_share_pct>0);
+        opps.push({
+          impact: s.revenue_opportunity||0, urgency: idx===0?'red':'yellow',
+          label: isGap
+            ? `Сегмент «${s.vetka}» — ${fmtR(s.market_revenue)} рынка, нас нет`
+            : `Сегмент «${s.vetka}» — доля всего ${s.our_share_pct.toFixed(1)}% при рынке ${fmtR(s.market_revenue)}`,
+          detail: `Потенциал до уровня лидера: +${fmtR(s.revenue_opportunity)}/мес — лидирует ${s.leader_brand||'конкурент'}`,
+          links: s.leader_brand ? `<div style="display:inline-flex;align-items:center;gap:3px;background:var(--s2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;font-size:11px;white-space:nowrap"><span>Лидер: ${s.leader_brand}</span>${kLink(s.leader_name||'',s.leader_brand,true,s.vetka,s.leader_kod||'')}</div>` : '',
+        });
+        if(idx===0) topSegOpp={...s,isGap};
+      });
+      // Fallback if the intelligence endpoint failed to load — cruder estimate
+      if(segOppsSorted.length===0 && gaps[0]){
+        const gap1=gaps[0], impact3=(gap1.revenue||0)*0.05;
         opps.push({
           impact: impact3, urgency:'yellow',
           label: `Сегмент «${gap1.vetka}» — ${fmtR(gap1.revenue)} рынка, нас нет`,
           detail: `5% доли = ${fmtR(impact3)}/мес — лидирует ${gap1.leader_brand||'конкурент'}`,
           links: gap1.leader_brand ? `<div style="display:inline-flex;align-items:center;gap:3px;background:var(--s2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;font-size:11px;white-space:nowrap"><span>Лидер: ${gap1.leader_brand}</span>${kLink(gap1.leader_name||'',gap1.leader_brand,true,gap1.vetka,gap1.leader_kod||'')}</div>` : '',
         });
+        topSegOpp={vetka:gap1.vetka,market_revenue:gap1.revenue,revenue_opportunity:impact3,leader_brand:gap1.leader_brand,leader_name:gap1.leader_name,leader_kod:gap1.leader_kod,our_share_pct:0,isGap:true};
       }
 
-      // 4. Rising competitor threat
+      // 4. Biggest competitor active in our segments — ranked by their revenue,
+      // not necessarily by growth. Label reflects the real momentum sign so we
+      // don't call a shrinking competitor "growing".
       const topThreat = (intel.competitive_threats||[])[0];
       if(topThreat){
+        const mom = topThreat.avg_momentum_pct||0;
+        const isGrowing = mom>5;
         opps.push({
-          impact: topThreat.revenue*0.1, urgency:'red',
-          label: `${topThreat.brand} растёт — забирает нашу долю`,
-          detail: `Выручка конкурента: ${fmtR(topThreat.revenue)}, рост ${topThreat.momentum_pct||'?'}%`,
+          impact: topThreat.revenue*0.1, urgency: isGrowing?'red':'yellow',
+          label: isGrowing ? `${topThreat.brand} растёт — забирает нашу долю` : `${topThreat.brand} — крупный конкурент в наших сегментах`,
+          detail: `Выручка конкурента: ${fmtR(topThreat.revenue)}${mom?` · динамика ${mom>0?'+':''}${mom}%/мес`:''}`,
           links: `<div style="display:inline-flex;align-items:center;gap:3px;background:var(--s2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;font-size:11px;white-space:nowrap"><span>${topThreat.brand}</span>${kLink(topThreat.top_name||'',topThreat.brand,true,'',topThreat.top_kod||'')}</div>`,
         });
       }
@@ -3477,7 +3964,9 @@ async function renderTactics(){
 
       // Action 1: SKUs with 0 reviews (most critical for Kaspi algo)
       if(noReviews.length>0){
-        const estUplift = roiOverall>0 ? `+${fmtR(roiOverall*10*noReviews.length)} при 5 отз. на каждый` : `цель: 5 отзывов на каждый`;
+        // Same formula as opps item 1 above (roiOverall*5*count) — keeps the
+        // two sections showing one number for the same fact, not two.
+        const estUplift = roiOverall>0 ? `+${fmtR(roiOverall*5*noReviews.length)} при 5 отз. на каждый` : `цель: 5 отзывов на каждый`;
         weekActions.push({
           num:1, color:'var(--red)', bg:'rgba(248,81,73,.12)', border:'var(--red)',
           icon:'ti-message-plus',
@@ -3498,38 +3987,26 @@ async function renderTactics(){
         });
       }
 
-      // Action 2: Biggest revenue gap
-      if(gaps.length>0){
-        const g1 = gaps[0];
+      // Action 2: biggest segment opportunity — reuses topSegOpp computed
+      // above for "Приоритеты по деньгам", so both sections point at the
+      // same segment with the same ₸ figure instead of two different ones.
+      if(topSegOpp){
+        const s = topSegOpp;
         weekActions.push({
           num:2, color:'var(--yellow)', bg:'rgba(210,153,34,.12)', border:'var(--yellow)',
-          icon:'ti-map-pin-plus',
-          action: `Войти в «${g1.vetka}» — рынок ${fmtR(g1.revenue)}, нас там нет`,
-          skus: `<div style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            <span style="font-size:12px;color:var(--muted)">Лидер конкурент:</span>
-            <div style="display:inline-flex;align-items:center;gap:4px;background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
-              <span>${g1.leader_brand||'—'}</span>
-              ${kLink(g1.leader_name||'',g1.leader_brand||'',true,g1.vetka,g1.leader_kod||'')}
-            </div>
-          </div>`,
-          metric: `5% доли = ${fmtR((g1.market_revenue||g1.revenue||0)*0.05)}/мес`,
-          tag:'В ЭТОМ МЕСЯЦЕ', tagClass:'tag-optimize',
-        });
-      } else if(weakSpots.length>0){
-        const w1 = weakSpots[0];
-        weekActions.push({
-          num:2, color:'var(--yellow)', bg:'rgba(210,153,34,.12)', border:'var(--yellow)',
-          icon:'ti-trending-up',
-          action: `Усилить «${w1.vetka}» — сейчас ${(w1.our_share_pct||0).toFixed(1)}% доли`,
+          icon: s.isGap ? 'ti-map-pin-plus' : 'ti-trending-up',
+          action: s.isGap
+            ? `Войти в «${s.vetka}» — рынок ${fmtR(s.market_revenue)}, нас там нет`
+            : `Усилить «${s.vetka}» — сейчас ${(s.our_share_pct||0).toFixed(1)}% доли при рынке ${fmtR(s.market_revenue)}`,
           skus: `<div style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span style="font-size:12px;color:var(--muted)">Лидер:</span>
             <div style="display:inline-flex;align-items:center;gap:4px;background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
-              <span>${w1.leader_brand||'—'}</span>
-              ${kLink(w1.leader_name||'',w1.leader_brand||'',true,w1.vetka,w1.leader_kod||'')}
+              <span>${s.leader_brand||'—'}</span>
+              ${kLink(s.leader_name||'',s.leader_brand||'',true,s.vetka,s.leader_kod||'')}
             </div>
           </div>`,
-          metric: `Цель 15% = +${fmtR(Math.max(0,(w1.market_revenue||w1.revenue||0)*0.15-(w1.our_revenue||0)))}/мес`,
-          tag:'РОСТ', tagClass:'tag-growth',
+          metric: `Потенциал до лидера: +${fmtR(s.revenue_opportunity)}/мес`,
+          tag: s.isGap ? 'В ЭТОМ МЕСЯЦЕ' : 'РОСТ', tagClass: s.isGap ? 'tag-optimize' : 'tag-growth',
         });
       }
 
@@ -3562,7 +4039,7 @@ async function renderTactics(){
       const planHtml = weekActions.length ? `<div style="margin-bottom:24px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div style="display:flex;align-items:center;gap:10px">
-            <div style="width:32px;height:32px;background:rgba(47,129,247,.12);border:1px solid rgba(47,129,247,.4);border-radius:8px;display:flex;align-items:center;justify-content:center">
+            <div style="width:32px;height:32px;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.4);border-radius:8px;display:flex;align-items:center;justify-content:center">
               <i class="ti ti-player-play" style="font-size:16px;color:var(--blue)"></i>
             </div>
             <div>
@@ -3621,9 +4098,11 @@ async function renderTactics(){
           ${compBenchTop?`<span style="margin-left:auto;font-size:11px;color:var(--muted)">Лидер рынка ${compBenchTop.brand}: ${compBenchTop.avg_reviews} отз./SKU · У нас: ${avgOurReviews.toFixed(1)}</span>`:''}
         </div>
         <div class="tw"><table>
-          <thead><tr><th>SKU</th><th>Бренд</th><th>Отзывы</th><th>ABC</th><th>Ветка</th><th>Выручка</th>${roiOverall>0?'<th>Потенциал (+10 отзывов)</th>':''}</tr></thead>
+          <thead><tr><th>SKU</th><th>Бренд</th><th>Отзывы</th><th>ABC</th><th>Ветка</th><th>Выручка</th>${roiOverall>0?'<th>Потенциал (до 5 отзывов)</th>':''}</tr></thead>
           <tbody>
-          ${[...noReviews.map(s=>({...s,_rev:0})), ...fewReviews.map(s=>({...s,_rev:s.reviews}))].slice(0,12).map(s=>`<tr>
+          ${[...noReviews.map(s=>({...s,_rev:0})), ...fewReviews.map(s=>({...s,_rev:s.reviews}))].slice(0,12).map(s=>{
+            const need=Math.max(0,5-s._rev); // reviews actually needed to clear the trust threshold — varies per SKU
+            return `<tr>
             <td style="font-size:12px">${s.name||s.kod||'—'}${kLink(s.name,s.brand,true,s.vetka,s.kod)}</td>
             <td style="font-size:12px">${s.brand}${kLink('',s.brand,true)}</td>
             <td style="text-align:center">${s._rev===0
@@ -3632,24 +4111,25 @@ async function renderTactics(){
             <td><span class="abc abc-${s.abc||'C'}">${s.abc||'—'}</span></td>
             <td style="font-size:12px;color:var(--muted)">${s.vetka||'—'}</td>
             <td>${fmtR(s.revenue||0)}</td>
-            ${roiOverall>0?`<td style="color:var(--green);font-size:12px">+${fmtR(roiOverall*10)}</td>`:''}
-          </tr>`).join('')}
+            ${roiOverall>0?`<td style="color:var(--green);font-size:12px">+${fmtR(roiOverall*need)}</td>`:''}
+          </tr>`;}).join('')}
           ${(noReviews.length+fewReviews.length)===0?`<tr><td colspan="7" style="text-align:center;color:var(--green);padding:16px">✅ Все SKU имеют достаточно отзывов</td></tr>`:''}
           </tbody>
         </table></div>
+        ${(noReviews.length+fewReviews.length)>12?`<div style="font-size:11px;color:var(--muted);margin-top:8px">Показаны 12 из ${noReviews.length+fewReviews.length} SKU без достаточных отзывов</div>`:''}
       </div>
 
       <!-- CARD 2: Незанятые сегменты -->
       ${gaps.length>0||weakSpots.length>0?`<div class="insight-card">
         <div class="insight-card-head"><i class="ti ti-map-pin-off" style="color:var(--yellow)"></i><span class="insight-card-title">Сегменты без нашего присутствия или с долей &lt;10%</span></div>
-        ${gaps.slice(0,4).map((v,i)=>`<div class="insight-item">
+        ${(window._tcGaps=gaps.slice(0,4)).map((v,i)=>`<div class="insight-item rowlink" onclick="openTacticsSegDrill('gap',${i})">
           <span class="insight-num" style="color:var(--red);font-weight:700">∅</span>
           <div>
             <div class="insight-text">${v.vetka}</div>
             <div class="insight-val">Рынок: ${fmtR(v.revenue)} · ${v.skus||0} SKU конкурентов · Нас нет</div>
           </div>
         </div>`).join('')}
-        ${weakSpots.slice(0,3).map(v=>`<div class="insight-item">
+        ${(window._tcWeak=weakSpots.slice(0,3)).map((v,i)=>`<div class="insight-item rowlink" onclick="openTacticsSegDrill('weak',${i})">
           <span class="insight-num" style="color:var(--yellow);font-weight:700">${v.our_share_pct.toFixed(0)}%</span>
           <div>
             <div class="insight-text">${v.vetka}</div>
@@ -3881,14 +4361,11 @@ function toast(msg,type='default'){
 
 // ── INIT ──
 (async()=>{
-  initParticles();
-  initTilt();
   initScrollReveal();
-  // initRipple — removed
-  initAurora();
   await checkAPI();
   await Promise.all([loadMonths(),loadSubtypes(),loadCounts()]);
   renderOverview();
+  moveDeptIndicator(true);
 })();
 </script>
 </body>
