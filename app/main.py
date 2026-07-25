@@ -31,16 +31,46 @@ app = FastAPI(
 )
 
 # ── Whole-site Basic Auth ──────────────────────────────────────────────────
-# Data on this site is confidential business analytics. If ADMIN_PASSWORD is
-# set (production), every request except /health must present valid HTTP
-# Basic credentials. If it's unset (local dev), auth is skipped entirely.
+# Data on this site is confidential business analytics. If any credentials are
+# configured (production), every request except /health must present valid
+# HTTP Basic credentials. If nothing is configured (local dev), auth is
+# skipped entirely.
+#
+# Two independent tiers of secrets:
+#   - Front-door login (who may open the site at all): BASIC_AUTH_USER/
+#     ADMIN_PASSWORD (the main/admin account) plus any extra accounts listed
+#     in BASIC_AUTH_VIEWERS — e.g. "artur:xxxx,baurzhan:yyyy". These extra
+#     accounts can view the whole dashboard but do NOT know ADMIN_PASSWORD,
+#     so they cannot unlock the separate in-app admin mode below.
+#   - In-app admin mode (upload/delete data, change settings, generate AI
+#     reports): gated by require_admin() in uploads.py, which checks
+#     ADMIN_PASSWORD only. Viewer accounts are never given this value.
 BASIC_AUTH_USER = os.getenv("BASIC_AUTH_USER", "torgstore")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 
+def _load_basic_auth_users() -> dict:
+    """Build the front-door username -> password map from env vars."""
+    users: dict = {}
+    if ADMIN_PASSWORD:
+        users[BASIC_AUTH_USER] = ADMIN_PASSWORD
+    for pair in os.getenv("BASIC_AUTH_VIEWERS", "").split(","):
+        pair = pair.strip()
+        if not pair or ":" not in pair:
+            continue
+        username, _, pw = pair.partition(":")
+        username, pw = username.strip(), pw.strip()
+        if username and pw:
+            users[username] = pw
+    return users
+
+
+BASIC_AUTH_USERS = _load_basic_auth_users()
+
+
 @app.middleware("http")
 async def basic_auth_middleware(request: Request, call_next):
-    if request.url.path == "/health" or not ADMIN_PASSWORD:
+    if request.url.path == "/health" or not BASIC_AUTH_USERS:
         return await call_next(request)
 
     auth_header = request.headers.get("Authorization", "")
@@ -48,7 +78,8 @@ async def basic_auth_middleware(request: Request, call_next):
         try:
             decoded = base64.b64decode(auth_header.split(" ", 1)[1]).decode("utf-8")
             username, _, password = decoded.partition(":")
-            if hmac.compare_digest(username, BASIC_AUTH_USER) and hmac.compare_digest(password, ADMIN_PASSWORD):
+            expected = BASIC_AUTH_USERS.get(username)
+            if expected is not None and hmac.compare_digest(password, expected):
                 return await call_next(request)
         except Exception:
             pass

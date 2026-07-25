@@ -15,6 +15,8 @@ services:
         sync: false   # set manually in Render dashboard — protects whole site + uploads/delete
       - key: BASIC_AUTH_USER
         sync: false   # optional, defaults to "torgstore" if unset
+      - key: BASIC_AUTH_VIEWERS
+        sync: false   # optional, view-only accounts: "user1:pass1,user2:pass2" — no admin-mode access
       - key: ALLOWED_ORIGINS
         sync: false   # e.g. https://kaspi-analytics.onrender.com — defaults to "*" if unset
     healthCheckPath: /health
