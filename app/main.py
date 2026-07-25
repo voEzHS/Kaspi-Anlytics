@@ -56,6 +56,13 @@ _auth_fail_hits: dict = defaultdict(deque)
 
 
 def _client_ip(request: Request) -> str:
+    # CF-Connecting-IP is set by Cloudflare (which fronts every Render app)
+    # and cannot be spoofed by the client — Cloudflare overwrites it.
+    # X-Forwarded-For is a weaker fallback: trustworthy in Render's normal
+    # setup, but headers are still easier to forge than a Cloudflare-set one.
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip:
+        return cf_ip.strip()
     fwd = request.headers.get("x-forwarded-for")
     if fwd:
         return fwd.split(",")[0].strip()
