@@ -24,7 +24,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/kaspi_analytics
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-KennysS4}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:8080,http://127.0.0.1:5500"
     volumes:
       - ./uploads:/app/uploads
