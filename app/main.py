@@ -1,10 +1,12 @@
+import base64
+import hmac
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, distinct, func
 
@@ -28,10 +30,43 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow all origins in dev (file:// protocol sends null origin)
+# ── Whole-site Basic Auth ──────────────────────────────────────────────────
+# Data on this site is confidential business analytics. If ADMIN_PASSWORD is
+# set (production), every request except /health must present valid HTTP
+# Basic credentials. If it's unset (local dev), auth is skipped entirely.
+BASIC_AUTH_USER = os.getenv("BASIC_AUTH_USER", "torgstore")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+
+
+@app.middleware("http")
+async def basic_auth_middleware(request: Request, call_next):
+    if request.url.path == "/health" or not ADMIN_PASSWORD:
+        return await call_next(request)
+
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.lower().startswith("basic "):
+        try:
+            decoded = base64.b64decode(auth_header.split(" ", 1)[1]).decode("utf-8")
+            username, _, password = decoded.partition(":")
+            if hmac.compare_digest(username, BASIC_AUTH_USER) and hmac.compare_digest(password, ADMIN_PASSWORD):
+                return await call_next(request)
+        except Exception:
+            pass
+
+    return Response(
+        content="Требуется авторизация / Authentication required",
+        status_code=401,
+        headers={"WWW-Authenticate": 'Basic realm="Kaspi Analytics"'},
+    )
+
+
+# CORS — restrict to known origins via ALLOWED_ORIGINS env var
+_allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS = [o.strip() for o in _allowed_origins_env.split(",") if o.strip()] or ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

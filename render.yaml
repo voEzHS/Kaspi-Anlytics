@@ -11,6 +11,12 @@ services:
           property: connectionString
       - key: ANTHROPIC_API_KEY
         sync: false   # set manually in Render dashboard
+      - key: ADMIN_PASSWORD
+        sync: false   # set manually in Render dashboard — protects whole site + uploads/delete
+      - key: BASIC_AUTH_USER
+        sync: false   # optional, defaults to "torgstore" if unset
+      - key: ALLOWED_ORIGINS
+        sync: false   # e.g. https://kaspi-analytics.onrender.com — defaults to "*" if unset
     healthCheckPath: /health
 
 databases:
