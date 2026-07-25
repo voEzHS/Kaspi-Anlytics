@@ -1,6 +1,8 @@
 import base64
 import hmac
 import os
+import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -29,6 +31,87 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# ── Rate limiting ───────────────────────────────────────────────────────────
+# In-memory sliding-window limiter (fine for Render's single free-tier
+# instance; if this ever runs on multiple instances, state won't be shared
+# across them and would need a Redis-backed limiter instead).
+#
+#   - General limit: caps how fast any one IP can hit the API at all —
+#     slows down bulk scraping of the confidential analytics data.
+#   - Auth-failure limit: much stricter, counts only 401 responses — slows
+#     down password brute-forcing specifically.
+#
+# Registered BEFORE the Basic Auth middleware below so it wraps AROUND it
+# (outer layer): it needs to run first on every request (to block floods and
+# locked-out IPs before they even reach the auth check) and needs to see the
+# final response status (to count 401s from the auth layer).
+_RATE_WINDOW_SEC = 60
+_RATE_MAX_REQUESTS = 200          # per IP per minute, all requests
+_AUTH_FAIL_WINDOW_SEC = 600       # 10 minutes
+_AUTH_FAIL_MAX = 8                # failed logins per IP before temp block
+
+_request_hits: dict = defaultdict(deque)
+_auth_fail_hits: dict = defaultdict(deque)
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _hit(log: dict, key: str, window: int, limit: int) -> bool:
+    """Record a hit for key; returns False if it's now over the limit."""
+    now = time.time()
+    dq = log[key]
+    while dq and dq[0] <= now - window:
+        dq.popleft()
+    if len(dq) >= limit:
+        return False
+    dq.append(now)
+    return True
+
+
+def _recent_count(log: dict, key: str, window: int) -> int:
+    now = time.time()
+    dq = log.get(key)
+    if not dq:
+        return 0
+    while dq and dq[0] <= now - window:
+        dq.popleft()
+    return len(dq)
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if request.url.path == "/health":
+        return await call_next(request)
+
+    ip = _client_ip(request)
+
+    # Brute-force lockout — check before doing anything else
+    if _recent_count(_auth_fail_hits, ip, _AUTH_FAIL_WINDOW_SEC) >= _AUTH_FAIL_MAX:
+        return Response(
+            content="Слишком много неверных попыток входа. Попробуйте позже.",
+            status_code=429,
+        )
+
+    # General request throttle
+    if not _hit(_request_hits, ip, _RATE_WINDOW_SEC, _RATE_MAX_REQUESTS):
+        return Response(
+            content="Слишком много запросов. Попробуйте позже.",
+            status_code=429,
+        )
+
+    response = await call_next(request)
+
+    if response.status_code == 401:
+        _auth_fail_hits[ip].append(time.time())
+
+    return response
+
 
 # ── Whole-site Basic Auth ──────────────────────────────────────────────────
 # Data on this site is confidential business analytics. If any credentials are
