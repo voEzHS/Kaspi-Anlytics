@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.models import DeptEnum, KaspiRow, Upload
+from app.analytics.tip_classifier import classify_rows
 
 router = APIRouter(prefix="/api/v1/uploads", tags=["uploads"])
 
@@ -375,6 +376,33 @@ async def upload_file(
             row["month"] = month_clean
 
     dept = DeptEnum[department]
+
+    # ── Auto-classify missing Тип against this department's own history ────
+    # Some sources (e.g. algatop for refrigerated) stopped sending a Тип
+    # column entirely. Never guess: resolve only rows with hard evidence
+    # (exact kod match, or a validated name/brand pattern — see
+    # tip_classifier.py), and leave the rest blank for manual review via
+    # GET/PATCH /api/v1/uploads/unclassified.
+    tip_classification = None
+    if any(not r["tip"] for r in parsed):
+        hist_result = await db.execute(
+            select(KaspiRow.kod, KaspiRow.tip, KaspiRow.name, KaspiRow.brand)
+            .where(KaspiRow.department == dept, KaspiRow.tip.isnot(None), KaspiRow.tip != "")
+        )
+        historical = [tuple(r) for r in hist_result.all()]
+        if historical:
+            summary = classify_rows(parsed, historical)
+            tip_classification = {
+                "resolved_exact_kod": summary["exact_kod"],
+                "resolved_exact_name": summary["exact_name_nocolor"],
+                "resolved_brand_pattern": summary["brand_prefix"],
+                "unresolved_count": len(summary["unresolved"]),
+                "unresolved_sample": [
+                    {"kod": r["kod"], "name": r["name"], "brand": r["brand"], "revenue": r["revenue"]}
+                    for r in summary["unresolved"][:20]
+                ],
+            }
+
     months = sorted({r["month"] for r in parsed if r["month"]})
     subtypes = sorted({r["tip"] for r in parsed if r["tip"]})
 
@@ -430,6 +458,7 @@ async def upload_file(
         "months": upload.months,
         "subtypes": upload.subtypes,
         "created_at": upload.created_at.isoformat(),
+        "tip_classification": tip_classification,
     }
 
 
@@ -455,6 +484,81 @@ async def list_uploads(
         }
         for u in uploads
     ]
+
+
+@router.get("/unclassified", summary="Rows with no Тип that need a manual decision")
+async def list_unclassified(
+    department: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Products currently sitting in the DB with an empty Тип (tip_classifier.py
+    couldn't resolve them with hard evidence). Grouped by kod, since the same
+    product can repeat across months — one decision fixes every row for it,
+    this month and every month going forward (the classifier will exact-kod
+    match it next time).
+    """
+    if department not in DeptEnum.__members__:
+        raise HTTPException(400, f"Unknown department: {department}")
+    dept = DeptEnum[department]
+
+    from sqlalchemy import func
+    q = (
+        select(
+            KaspiRow.kod,
+            KaspiRow.name,
+            KaspiRow.brand,
+            func.sum(KaspiRow.revenue).label("revenue"),
+            func.count(KaspiRow.id).label("rows"),
+        )
+        .where(
+            KaspiRow.department == dept,
+            (KaspiRow.tip.is_(None)) | (KaspiRow.tip == ""),
+        )
+        .group_by(KaspiRow.kod, KaspiRow.name, KaspiRow.brand)
+        .order_by(func.sum(KaspiRow.revenue).desc())
+    )
+    rows = (await db.execute(q)).all()
+    return {
+        "department": department,
+        "count": len(rows),
+        "total_revenue": sum(r.revenue or 0 for r in rows),
+        "items": [
+            {"kod": r.kod, "name": r.name, "brand": r.brand, "revenue": r.revenue or 0, "row_count": r.rows}
+            for r in rows
+        ],
+    }
+
+
+@router.patch("/tip", summary="Set Тип for one product (applies to every row with this kod)")
+async def set_tip(
+    department: str,
+    kod: str,
+    tip: str,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    """
+    One-time decision that becomes permanent: sets Тип on every existing row
+    for this kod+department, AND — because tip_classifier.py's exact_kod tier
+    always trusts the DB's own history first — every future month's upload of
+    the same product resolves automatically from here on. No file to
+    re-upload, no need to remember the decision next time.
+    """
+    if department not in DeptEnum.__members__:
+        raise HTTPException(400, f"Unknown department: {department}")
+    dept = DeptEnum[department]
+    if not tip.strip():
+        raise HTTPException(400, "tip cannot be empty")
+
+    from sqlalchemy import update
+    result = await db.execute(
+        update(KaspiRow)
+        .where(KaspiRow.department == dept, KaspiRow.kod == kod)
+        .values(tip=tip.strip())
+    )
+    await db.commit()
+    return {"kod": kod, "tip": tip.strip(), "rows_updated": result.rowcount}
 
 
 @router.delete("/{upload_id}", summary="Delete upload and its rows")
