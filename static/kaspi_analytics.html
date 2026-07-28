@@ -48,25 +48,33 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 :root[data-dept="icg"]{--blue:#22D3EE;--blue-dim:rgba(34,211,238,.15)}
 
 /* ── LANDING / DEPARTMENT PICKER ──────────────────────────────────────────── */
-.landing{position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;align-items:center;justify-content:center;padding:24px;overflow-y:auto}
-.landing-inner{width:100%;max-width:900px;margin:auto}
-.landing-brand{display:flex;align-items:center;gap:14px;justify-content:center;margin-bottom:28px}
+/* Vertical list, not a grid — a row expanding to show subtypes just pushes
+   the rows below it down; nothing above/beside it ever gets orphaned or
+   left lopsided the way a multi-column grid does when one cell grows. */
+.landing{position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;align-items:flex-start;justify-content:center;padding:48px 24px;overflow-y:auto}
+.landing-inner{width:100%;max-width:640px;margin:auto}
+.landing-brand{display:flex;align-items:center;gap:14px;justify-content:center;margin-bottom:36px}
 .landing-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.5px}
 .landing-brand-sub{font-size:13px;color:var(--muted)}
-.landing-heading{text-align:center;font-size:15px;color:var(--muted);margin-bottom:28px}
-.landing-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
-@media(max-width:640px){.landing-grid{grid-template-columns:1fr}}
-.landing-dept-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r-lg);padding:22px;cursor:pointer;transition:border-color .15s var(--ease-out),transform .12s var(--ease-out),background .15s var(--ease-out)}
-.landing-dept-card:hover{border-color:var(--muted);background:var(--s2)}
-.landing-dept-card:active{transform:scale(.99)}
-.landing-dept-card.expanded{border-color:var(--blue);background:var(--s2);grid-column:1/-1}
-.landing-dept-ic{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:14px}
-.landing-dept-label{font-size:16px;font-weight:600;margin-bottom:12px}
+.landing-heading{text-align:center;font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;letter-spacing:-.3px;color:var(--text);margin-bottom:6px}
+.landing-subheading{text-align:center;font-size:13px;color:var(--muted);margin-bottom:32px}
+.landing-list{display:flex;flex-direction:column;gap:10px}
+.landing-row{background:var(--s1);border:1px solid var(--border);border-left:3px solid transparent;border-radius:var(--r-lg);padding:16px 20px;cursor:pointer;transition:border-color .15s var(--ease-out),background .15s var(--ease-out)}
+.landing-row:hover{border-color:var(--muted);background:var(--s2)}
+.landing-row:active{transform:scale(.995)}
+.landing-row.expanded{background:var(--s2)}
+.landing-row.no-data{opacity:.7}
+.landing-row-main{display:flex;align-items:center;gap:16px}
+.landing-dept-ic{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+.landing-row-info{flex:1;display:flex;align-items:center;flex-wrap:wrap;gap:6px 28px;min-width:0}
+.landing-dept-label{font-size:15.5px;font-weight:600;min-width:150px}
 .landing-dept-kpis{display:flex;gap:24px}
-.landing-dept-kpis>div{display:flex;flex-direction:column;gap:2px}
-.ldk-v{font-family:'Space Grotesk',sans-serif;font-size:17px;font-weight:700}
-.ldk-l{font-size:11px;color:var(--muted)}
+.landing-dept-kpis>div{display:flex;flex-direction:column;gap:1px}
+.ldk-v{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700}
+.ldk-l{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
 .landing-dept-empty{font-size:12px;color:var(--muted)}
+.landing-row-chevron{color:var(--muted);font-size:16px;flex-shrink:0;transition:transform .2s var(--ease-out)}
+.landing-row.expanded .landing-row-chevron{transform:rotate(90deg)}
 .landing-subtypes{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)}
 .landing-chip{padding:8px 16px;font-size:12.5px;font-weight:500;border-radius:20px;border:1px solid var(--border);background:var(--s3);color:var(--text);cursor:pointer;transition:background .15s,border-color .15s}
 .landing-chip:hover{background:var(--s2);border-color:var(--muted)}
@@ -582,8 +590,9 @@ textarea.inp::placeholder{color:var(--muted)}
       </div>
     </div>
     <div class="landing-heading">Выберите отдел</div>
-    <div class="landing-grid" id="landing-grid">
-      <div class="ld" style="padding:60px 0;grid-column:1/-1"><div class="spin"></div>Загрузка...</div>
+    <div class="landing-subheading">Затем — нужный тип товара внутри отдела</div>
+    <div class="landing-list" id="landing-grid">
+      <div class="ld" style="padding:60px 0"><div class="spin"></div>Загрузка...</div>
     </div>
   </div>
 </div>
@@ -1475,52 +1484,69 @@ function updatePageTitle(name){
 // each care about a different department. initLanding() fetches a quick KPI
 // snapshot per department so the choice is informed, not blind.
 async function initLanding(){
-  const grid = g('landing-grid');
-  if(!grid) return;
+  const list = g('landing-grid');
+  if(!list) return;
   const results = await Promise.all(
     DEPTS.map(d => apig('/analytics/overview?department='+d.api).catch(()=>null))
   );
-  grid.innerHTML = DEPTS.map((d,i) => {
+  list.innerHTML = DEPTS.map((d,i) => {
     const ov = results[i];
     const hasData = ov && ov.total_revenue > 0;
-    return `<div class="landing-dept-card" data-dept="${d.code}" onclick="selectLandingDept('${d.code}')">
-      <div class="landing-dept-ic" style="background:${drgba(d.code,.15)};color:${dcolor(d.code)}"><i class="ti ti-${d.icon}"></i></div>
-      <div class="landing-dept-label">${d.label}</div>
-      ${hasData ? `
-        <div class="landing-dept-kpis">
-          <div><span class="ldk-v">${fmtR(ov.total_revenue)}</span><span class="ldk-l">рынок</span></div>
-          <div><span class="ldk-v" style="color:${dcolor(d.code)}">${(+ov.our_share_pct||0).toFixed(1)}%</span><span class="ldk-l">наша доля</span></div>
-        </div>` : `<div class="landing-dept-empty">Нет данных</div>`}
+    return `<div class="landing-row${hasData?'':' no-data'}" data-dept="${d.code}" onclick="selectLandingDept('${d.code}')">
+      <div class="landing-row-main">
+        <div class="landing-dept-ic" style="background:${drgba(d.code,.15)};color:${dcolor(d.code)}"><i class="ti ti-${d.icon}"></i></div>
+        <div class="landing-row-info">
+          <div class="landing-dept-label">${d.label}</div>
+          ${hasData ? `
+            <div class="landing-dept-kpis">
+              <div><span class="ldk-v">${fmtR(ov.total_revenue)}</span><span class="ldk-l">рынок</span></div>
+              <div><span class="ldk-v" style="color:${dcolor(d.code)}">${(+ov.our_share_pct||0).toFixed(1)}%</span><span class="ldk-l">наша доля</span></div>
+            </div>` : `<div class="landing-dept-empty">Нет данных за этот период</div>`}
+        </div>
+        <i class="ti ti-chevron-right landing-row-chevron"></i>
+      </div>
     </div>`;
   }).join('');
 }
 
-// Click a card: expand it inline to show subtype chips ("Все типы" + each Тип)
+// Every Тип in the DB is lowercase-or-mixed depending on how it originally
+// got typed in ("бонета", "шок") — normalize to one capitalized word for display,
+// without touching the underlying value used in API calls.
+function capFirst(s){
+  s = (s||'').trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+// Click a row: expand it inline to show subtype chips ("Все типы" + each Тип)
 // instead of jumping straight in — mirrors picking department, then subcategory.
+// A vertical list (not a grid) means an expanded row only ever pushes the
+// rows below it down — nothing above/beside it ever ends up lopsided.
 async function selectLandingDept(code){
-  const grid = g('landing-grid');
-  if(!grid) return;
-  const card = grid.querySelector(`[data-dept="${code}"]`);
-  if(!card) return;
-  if(card.classList.contains('expanded')) return; // already expanded — use its chips
+  const list = g('landing-grid');
+  if(!list) return;
+  const row = list.querySelector(`[data-dept="${code}"]`);
+  if(!row) return;
+  if(row.classList.contains('expanded')) return; // already expanded — use its chips
   collapseLanding();
-  card.classList.add('expanded');
+  row.classList.add('expanded');
+  row.style.borderLeftColor = dcolor(code);
   const sub = document.createElement('div');
   sub.className = 'landing-subtypes';
   sub.innerHTML = '<div class="spin" style="width:14px;height:14px;border-width:2px"></div>';
-  card.appendChild(sub);
+  row.appendChild(sub);
   let subtypes = [];
   try{ const d = await apig('/analytics/subtypes?department='+DA[code]); subtypes = d.subtypes||[]; }catch{}
   const chips = ['', ...subtypes];
   sub.innerHTML = chips.map(t =>
-    `<button class="landing-chip" onclick="event.stopPropagation();enterDept('${code}','${(t||'').replace(/'/g,"\\'")}')">${t||'Все типы'}</button>`
+    `<button class="landing-chip" onclick="event.stopPropagation();enterDept('${code}','${(t||'').replace(/'/g,"\\'")}')">${t?capFirst(t):'Все типы'}</button>`
   ).join('') + `<button class="landing-chip landing-chip-back" onclick="event.stopPropagation();collapseLanding()"><i class="ti ti-arrow-left"></i></button>`;
 }
 function collapseLanding(){
-  const grid = g('landing-grid');
-  if(!grid) return;
-  grid.querySelectorAll('.landing-dept-card').forEach(c=>{
+  const list = g('landing-grid');
+  if(!list) return;
+  list.querySelectorAll('.landing-row').forEach(c=>{
     c.classList.remove('expanded');
+    c.style.borderLeftColor='';
     const s=c.querySelector('.landing-subtypes'); if(s) s.remove();
   });
 }
