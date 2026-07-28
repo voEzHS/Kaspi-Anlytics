@@ -15,6 +15,8 @@
   --ice:#60B8D4;--ice-dim:rgba(96,184,212,.15);
   --green:#3FB950;--green-dim:rgba(63,185,80,.15);
   --blue:#6366F1;--blue-dim:rgba(99,102,241,.15);
+  --oven:#E8871E;--oven-dim:rgba(232,135,30,.15);
+  --icemk:#22D3EE;--icemk-dim:rgba(34,211,238,.15);
   --yellow:#D29922;--yellow-dim:rgba(210,153,34,.15);
   --red:#F85149;--red-dim:rgba(248,81,73,.15);
   --purple:#A371F7;
@@ -42,6 +44,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
    department so the whole shell (nav, buttons, hero numbers) feels distinct,
    not just a pair of icons. Freezers = indigo/ice blend, Fridges = green. ── */
 :root[data-dept="ref"]{--blue:#22B573;--blue-dim:rgba(34,181,115,.15)}
+:root[data-dept="ovn"]{--blue:#E8871E;--blue-dim:rgba(232,135,30,.15)}
+:root[data-dept="icg"]{--blue:#22D3EE;--blue-dim:rgba(34,211,238,.15)}
 
 /* ── ACCENT DISPLAY FONT — hero KPI numbers only, Inter stays for everything else ── */
 .hero-num{font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-1.5px}
@@ -65,13 +69,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .db:hover{background:var(--s2);color:var(--text)}
 .db.af{color:var(--ice)}
 .db.ar{color:var(--green)}
+.db.ao{color:var(--oven)}
+.db.ai{color:var(--icemk)}
 /* ── SPRING-DRIVEN DEPARTMENT PILL — the colored highlight lives here, not on
    the buttons, so switching departments reads as one pill physically sliding
    and resizing between positions (Kowalski: springs for interruptible UI toggles) ── */
 .dept-indicator{position:absolute;left:0;top:0;width:0;height:0;border-radius:var(--r);background:rgba(96,184,212,.1);border:1px solid rgba(96,184,212,.25);z-index:0;pointer-events:none;will-change:transform,width;opacity:0}
 .dept-indicator.ready{opacity:1}
 .dd{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.dd-f{background:var(--ice)}.dd-r{background:var(--green)}
+.dd-f{background:var(--ice)}.dd-r{background:var(--green)}.dd-o{background:var(--oven)}.dd-i{background:var(--icemk)}
 .dc{margin-left:auto;font-size:11px;background:var(--s3);padding:2px 6px;border-radius:8px;font-weight:500}
 
 .nav-sec{padding:12px;flex:1}
@@ -122,6 +128,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .type-tab:hover{background:var(--s3);color:var(--text);border-color:var(--muted)}
 .type-tab.active-f{background:rgba(96,184,212,.15);color:var(--ice);border-color:rgba(96,184,212,.5)}
 .type-tab.active-r{background:rgba(63,185,80,.15);color:var(--green);border-color:rgba(63,185,80,.5)}
+.type-tab.active-o{background:rgba(232,135,30,.15);color:var(--oven);border-color:rgba(232,135,30,.5)}
+.type-tab.active-i{background:rgba(34,211,238,.15);color:var(--icemk);border-color:rgba(34,211,238,.5)}
 .type-tab .tcnt{font-size:11px;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:10px;font-weight:400}
 .type-bar-hide{display:none}
 
@@ -131,6 +139,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .chip:hover{border-color:var(--muted);color:var(--text)}
 .chip.cf{background:var(--ice-dim);border-color:var(--ice);color:var(--ice)}
 .chip.cr{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+.chip.co{background:var(--oven-dim);border-color:var(--oven);color:var(--oven)}
+.chip.ci{background:var(--icemk-dim);border-color:var(--icemk);color:var(--icemk)}
 
 /* ── MAIN AREA ─────────────────────────────────────────────────────── */
 .main{flex:1;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;min-width:0}
@@ -139,6 +149,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .tb-dept{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600}
 .tb-dept.df{background:rgba(96,184,212,.12);color:var(--ice);border:1px solid rgba(96,184,212,.35)}
 .tb-dept.dr{background:rgba(63,185,80,.12);color:var(--green);border:1px solid rgba(63,185,80,.35)}
+.tb-dept.do{background:rgba(232,135,30,.12);color:var(--oven);border:1px solid rgba(232,135,30,.35)}
+.tb-dept.di{background:rgba(34,211,238,.12);color:var(--icemk);border:1px solid rgba(34,211,238,.35)}
 
 select.sel,select.fsel{background:var(--s2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:var(--r);font-size:13px;font-family:inherit;cursor:pointer;transition:border-color .15s}
 select.sel:focus,select.fsel:focus{outline:none;border-color:var(--blue)}
@@ -210,8 +222,14 @@ tbody tr:nth-child(even):hover td{background:rgba(255,255,255,.055)}
 .or td:first-child{border-left:3px solid var(--ice)}
 .or.ref td{background:rgba(63,185,80,.05)}
 .or.ref td:first-child{border-left-color:var(--green)}
+.or.ovn td{background:rgba(232,135,30,.05)}
+.or.ovn td:first-child{border-left-color:var(--oven)}
+.or.icg td{background:rgba(34,211,238,.05)}
+.or.icg td:first-child{border-left-color:var(--icemk)}
 .or:hover td{background:rgba(96,184,212,.10)!important}
 .or.ref:hover td{background:rgba(63,185,80,.10)!important}
+.or.ovn:hover td{background:rgba(232,135,30,.10)!important}
+.or.icg:hover td{background:rgba(34,211,238,.10)!important}
 /* Whole-row drill-down affordance — row itself is clickable, opens the product-level modal */
 tbody tr.rowlink{cursor:pointer}
 tbody tr.rowlink:hover td{background:rgba(96,184,212,.09)!important}
@@ -219,6 +237,8 @@ tbody tr.rowlink:hover td{background:rgba(96,184,212,.09)!important}
 .insight-item.rowlink:hover{background:rgba(96,184,212,.07)}
 .our-badge{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;background:rgba(96,184,212,.15);color:var(--ice);border:1px solid rgba(96,184,212,.35);margin-left:5px;vertical-align:middle}
 .our-badge.ref{background:rgba(63,185,80,.15);color:var(--green);border-color:rgba(63,185,80,.35)}
+.our-badge.ovn{background:rgba(232,135,30,.15);color:var(--oven);border-color:rgba(232,135,30,.35)}
+.our-badge.icg{background:rgba(34,211,238,.15);color:var(--icemk);border-color:rgba(34,211,238,.35)}
 
 /* ── BADGES ─────────────────────────────────────────────────────────── */
 .abc{display:inline-block;padding:2px 9px;border-radius:6px;font-size:11px;font-weight:700}
@@ -229,7 +249,7 @@ tbody tr.rowlink:hover td{background:rgba(96,184,212,.09)!important}
 .bw{display:flex;align-items:center;gap:8px}
 .bbg{flex:1;height:5px;background:var(--s3);border-radius:3px;overflow:hidden}
 .bf{height:100%;border-radius:3px}
-.bf.frz{background:var(--ice)}.bf.ref{background:var(--green)}
+.bf.frz{background:var(--ice)}.bf.ref{background:var(--green)}.bf.ovn{background:var(--oven)}.bf.icg{background:var(--icemk)}
 .bp{font-size:11px;color:var(--muted);width:42px;text-align:right;font-weight:600}
 
 .cmp-g{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -251,7 +271,7 @@ tbody tr.rowlink:hover td{background:rgba(96,184,212,.09)!important}
 .ui{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
 .ui:last-child{border-bottom:none}
 .uic{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
-.uic.frz{background:rgba(96,184,212,.12);color:var(--ice)}.uic.ref{background:rgba(63,185,80,.12);color:var(--green)}
+.uic.frz{background:rgba(96,184,212,.12);color:var(--ice)}.uic.ref{background:rgba(63,185,80,.12);color:var(--green)}.uic.ovn{background:rgba(232,135,30,.12);color:var(--oven)}.uic.icg{background:rgba(34,211,238,.12);color:var(--icemk)}
 .uii{flex:1;min-width:0}
 .un{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .um{font-size:12px;color:var(--muted)}
@@ -536,6 +556,8 @@ textarea.inp::placeholder{color:var(--muted)}
     <div class="dept-indicator" id="dept-indicator"></div>
     <button class="db af" id="btn-f" onclick="setDept('frz')"><span class="dd dd-f"></span>Морозильники<span class="dc" id="cnt-f">—</span></button>
     <button class="db" id="btn-r" onclick="setDept('ref')"><span class="dd dd-r"></span>Холод. витрины<span class="dc" id="cnt-r">—</span></button>
+    <button class="db" id="btn-o" onclick="setDept('ovn')"><span class="dd dd-o"></span>Жарочные шкафы<span class="dc" id="cnt-o">—</span></button>
+    <button class="db" id="btn-i" onclick="setDept('icg')"><span class="dd dd-i"></span>Льдогенераторы<span class="dc" id="cnt-i">—</span></button>
   </div>
 
   <div class="nav-sec">
@@ -808,6 +830,8 @@ textarea.inp::placeholder{color:var(--muted)}
                 <select class="fsel" id="up-dept">
                   <option value="frz">❄️ Морозильники</option>
                   <option value="ref">🟢 Холод. витрины</option>
+                  <option value="ovn">🔥 Жарочные шкафы</option>
+                  <option value="icg">🧊 Льдогенераторы</option>
                 </select>
               </div>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -937,15 +961,28 @@ function showAdminModal(onSuccess){
 }
 const CH={};
 const PAL=['#60B8D4','#3FB950','#6366F1','#D29922','#A371F7','#F85149','#79C0FF','#56D364','#FFA657','#FF7B72','#D2A8FF'];
-const DL={frz:'Морозильники',ref:'Холод. витрины'};
-const DA={frz:'freezers',ref:'refrigerated'};
+// ── DEPARTMENT CONFIG — single source of truth for all 4 departments.
+// letter drives CSS class suffixes (dd-<letter>, .db.a<letter>, .tb-dept.d<letter>,
+// type-tab active-<letter>, chip c<letter>); rgb drives per-dept rgba() shades
+// via drgba(); cssVar points at the matching --color token in :root for solid colors.
+const DEPTS=[
+  {code:'frz', api:'freezers',     label:'Морозильники',   letter:'f', rgb:'96,184,212', cssVar:'--ice',   chart:'#60B8D4', icon:'snowflake'},
+  {code:'ref', api:'refrigerated', label:'Холод. витрины', letter:'r', rgb:'63,185,80',  cssVar:'--green', chart:'#3FB950', icon:'refrigerator'},
+  {code:'ovn', api:'ovens',        label:'Жарочные шкафы', letter:'o', rgb:'232,135,30', cssVar:'--oven',  chart:'#E8871E', icon:'flame'},
+  {code:'icg', api:'ice_makers',   label:'Льдогенераторы', letter:'i', rgb:'34,211,238', cssVar:'--icemk', chart:'#22D3EE', icon:'cube'},
+];
+const DMAP=Object.fromEntries(DEPTS.map(d=>[d.code,d]));
+const DL=Object.fromEntries(DEPTS.map(d=>[d.code,d.label]));
+const DA=Object.fromEntries(DEPTS.map(d=>[d.code,d.api]));
+function drgba(code,a){return `rgba(${(DMAP[code]||DMAP.frz).rgb},${a})`}
+function dcolor(code){return `var(${(DMAP[code]||DMAP.frz).cssVar})`}
 const PTITLES={overview:'Обзор',priority:'Приоритеты',brands:'Бренды',vetka:'Ветки',products:'Товары',abc:'ABC',trends:'Тренды',tactics:'Тактика',upload:'Загрузка',settings:'Настройки'};
 
 const A={dept:'frz',month:'',sub:'',subs:[],pp:1,ps:50,ptotal:0,pOursOnly:false};
 if(!window._brands) window._brands=new Set(['AOLIEGE','FRIGGIER','LEADBROS','XINGX','MUXXED']);
 
 // ── HELPERS ──
-function dc(){return A.dept==='ref'?'#3FB950':'#60B8D4'}
+function dc(){return (DMAP[A.dept]||DMAP.frz).chart}
 function fmtR(v){v=+v||0;if(v>=1e9)return(v/1e9).toFixed(1)+' млрд ₸';if(v>=1e6)return(v/1e6).toFixed(1)+' млн ₸';if(v>=1e3)return(v/1e3).toFixed(0)+' тыс ₸';return v.toFixed(0)+' ₸'}
 // ── StyleSeed "Large Number + Small Unit" rule (design-skills/styleseed-design-language.md,
 //    §2): the eye should land on the number first — unit wraps in a smaller, lighter span
@@ -1391,12 +1428,15 @@ function setDept(d){
   window._prFilter = {dept:'all', cat:'all'};
   window._prDone   = new Set();
   window._prOpps   = [];
-  g('btn-f').className='db'+(d==='frz'?' af':'');
-  g('btn-r').className='db'+(d==='ref'?' ar':'');
+  DEPTS.forEach(dd=>{
+    const btn=g('btn-'+dd.letter);
+    if(btn) btn.className='db'+(d===dd.code?' a'+dd.letter:'');
+  });
   moveDeptIndicator();
   const bd=g('tb-dept');
-  bd.className='tb-dept '+(d==='frz'?'df':'dr');
-  bd.innerHTML=`<span class="dd dd-${d==='frz'?'f':'r'}"></span>${DL[d]}`;
+  const meta=DMAP[d]||DMAP.frz;
+  bd.className='tb-dept d'+meta.letter;
+  bd.innerHTML=`<span class="dd dd-${meta.letter}"></span>${DL[d]}`;
   // Glitch logo icon on department switch
   const lic=document.querySelector('.logo-ic');
   if(lic){lic.classList.remove('glitching');void lic.offsetWidth;lic.classList.add('glitching');setTimeout(()=>lic.classList.remove('glitching'),500);}
@@ -1411,13 +1451,13 @@ let _deptSpring=null;
 function moveDeptIndicator(instant){
   const ind=document.getElementById('dept-indicator');
   const sec=document.querySelector('.dept-sec');
-  const active=sec&&sec.querySelector('.db.af,.db.ar');
+  const active=sec&&sec.querySelector(DEPTS.map(d=>'.db.a'+d.letter).join(','));
   if(!ind||!sec||!active||active.offsetParent===null) return;
   const targetX=active.offsetLeft, targetW=active.offsetWidth;
   const targetTop=active.offsetTop, targetH=active.offsetHeight;
-  const isRef=active.classList.contains('ar');
-  ind.style.background=isRef?'rgba(63,185,80,.1)':'rgba(96,184,212,.1)';
-  ind.style.borderColor=isRef?'rgba(63,185,80,.25)':'rgba(96,184,212,.25)';
+  const activeDept=DEPTS.find(d=>active.classList.contains('a'+d.letter))||DEPTS[0];
+  ind.style.background=drgba(activeDept.code,.1);
+  ind.style.borderColor=drgba(activeDept.code,.25);
   ind.style.top=targetTop+'px';
   ind.style.height=targetH+'px';
   const reduceMotion=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1499,12 +1539,12 @@ function rebuildTypeTabs(){
   const bar=g('type-bar');
   if(!A.subs||A.subs.length<2){bar.className='type-bar type-bar-hide';A.sub='';return;}
   bar.className='type-bar';
-  const ac=A.dept==='ref'?'active-r':'active-f';
+  const ac='active-'+(DMAP[A.dept]||DMAP.frz).letter;
   bar.innerHTML=
     `<button class="type-tab ${!A.sub?ac:''}" onclick="setSub('')"><i class="ti ti-layout-grid"></i>Все типы</button>`+
     A.subs.map(t=>`<button class="type-tab ${A.sub===t?ac:''}" onclick="setSub('${t}')"><i class="ti ${typeIcon(t)}"></i>${t}</button>`).join('');
   // also rebuild legacy chips (hidden but keep for legacy code refs)
-  const cc=A.dept==='ref'?'cr':'cf';
+  const cc='c'+(DMAP[A.dept]||DMAP.frz).letter;
   if(g('chips')) g('chips').innerHTML=`<span class="chip ${!A.sub?cc:''}" onclick="setSub('')">Все</span>`+
     A.subs.map(t=>`<span class="chip ${A.sub===t?cc:''}" onclick="setSub('${t}')">${t}</span>`).join('');
 }
@@ -1519,14 +1559,16 @@ function setSub(t){
 // ── COUNTS ──
 async function loadCounts(){
   try{
-    const[f,r]=await Promise.all([apig('/uploads/?department=freezers'),apig('/uploads/?department=refrigerated')]);
+    const results=await Promise.all(DEPTS.map(d=>apig('/uploads/?department='+d.api).catch(()=>[])));
     // САЙ-03: показываем кол-во месяцев, а не строк базы
-    const fMonths=new Set((f||[]).flatMap(u=>u.months||[])).size;
-    const rMonths=new Set((r||[]).flatMap(u=>u.months||[])).size;
-    g('cnt-f').textContent=fMonths>0?`${fMonths} мес.`:'—';
-    g('cnt-r').textContent=rMonths>0?`${rMonths} мес.`:'—';
-    // Last updated indicator
-    const allUploads=[...(f||[]),...(r||[])];
+    let allUploads=[];
+    DEPTS.forEach((d,i)=>{
+      const list=results[i]||[];
+      const months=new Set(list.flatMap(u=>u.months||[])).size;
+      const el=g('cnt-'+d.letter);
+      if(el) el.textContent=months>0?`${months} мес.`:'—';
+      allUploads=allUploads.concat(list);
+    });
     if(allUploads.length){
       const latest=allUploads.reduce((a,b)=>new Date(a.created_at)>new Date(b.created_at)?a:b);
       const dt=new Date(latest.created_at);
@@ -1839,7 +1881,7 @@ async function renderOverview(){
     if(d.top_brands&&d.top_brands.length){
       const maxR=d.top_brands[0]?.revenue||1;
       g('t-tb').innerHTML=`<thead><tr><th>#</th><th>Бренд</th><th>Выручка</th><th>Доля</th><th></th></tr></thead><tbody>`+
-        d.top_brands.slice(0,10).map((b,i)=>`<tr${b.is_ours?' class="or'+(A.dept==='ref'?' ref':'')+'"':''}>
+        d.top_brands.slice(0,10).map((b,i)=>`<tr${b.is_ours?' class="or'+(A.dept==='frz'?'':' '+A.dept)+'"':''}>
           <td class="rn">${i+1}</td>
           <td style="color:${b.is_ours?dc():'inherit'}">${escHtml(b.brand)}${b.is_ours?' ⭐':''}</td>
           <td>${fmtR(b.revenue)}</td>
@@ -1878,7 +1920,7 @@ async function renderBrands(){
         const avgRev_pct = maxAvgRev>0?(revPerSku/maxAvgRev*100):0;
         const threatIcon = threats.has(b.brand)?`<span title="Растущая угроза" style="color:var(--red);font-size:11px">⚠</span>`:'';
         const revPerSkuColor = revPerSku > maxAvgRev*0.5 ? 'var(--green)' : 'var(--muted)';
-        return `<tr class="rowlink${b.is_ours?' or'+(A.dept==='ref'?' ref':''):''}" onclick="if(!event.target.closest('a'))openBrandDrill(${i})">
+        return `<tr class="rowlink${b.is_ours?' or'+(A.dept==='frz'?'':' '+A.dept):''}" onclick="if(!event.target.closest('a'))openBrandDrill(${i})">
           <td class="rn">${i+1}</td>
           <td style="color:${b.is_ours?dc():'inherit'}">${escHtml(b.brand)}${b.is_ours?' ⭐':''}${threatIcon}${kLink(b.top_name||'',b.brand,true,'',b.top_kod||'')}</td>
           <td>${fmtR(b.revenue)}</td>
@@ -2002,7 +2044,7 @@ async function renderVetka(){
         const seg=segMap[v.vetka];
         const shareColor=v.our_share_pct>=20?'var(--green)':v.our_share_pct>=8?'var(--yellow)':v.our_revenue>0?'var(--red)':'var(--muted)';
         const opportunity = seg?.revenue_opportunity||0;
-        return `<tr class="rowlink${v.our_revenue>0?' or'+(A.dept==='ref'?' ref':''):''}" onclick="if(!event.target.closest('a'))openVetkaDrill(${i})">
+        return `<tr class="rowlink${v.our_revenue>0?' or'+(A.dept==='frz'?'':' '+A.dept):''}" onclick="if(!event.target.closest('a'))openVetkaDrill(${i})">
           <td class="rn">${i+1}</td>
           <td style="font-weight:${v.our_revenue>0?'500':'400'}">${escHtml(v.vetka)}</td>
           <td style="text-align:right">${fmtR(v.revenue)}</td>
@@ -2050,9 +2092,9 @@ function toggleOursFilter(){
   A.pOursOnly=!A.pOursOnly;
   A.pp=1;
   const btn=g('p-ours-btn');
-  const deptColor=A.dept==='ref'?'var(--green)':'var(--ice)';
-  const deptDim=A.dept==='ref'?'rgba(63,185,80,.15)':'rgba(96,184,212,.15)';
-  const deptBord=A.dept==='ref'?'rgba(63,185,80,.4)':'rgba(96,184,212,.4)';
+  const deptColor=dcolor(A.dept);
+  const deptDim=drgba(A.dept,.15);
+  const deptBord=drgba(A.dept,.4);
   if(btn){
     btn.style.background=A.pOursOnly?deptDim:'var(--s2)';
     btn.style.color=A.pOursOnly?deptColor:'var(--muted)';
@@ -2131,11 +2173,11 @@ async function renderProducts(){
     }
 
     // ТОВ-01: hide Тип and Шт cols on narrow screens
-    const deptCls = A.dept==='ref'?' ref':'';
+    const deptCls = A.dept==='frz'?'':' '+A.dept; // matches CSS: .or/.our-badge unsuffixed = frz color
     g('t-pr').innerHTML=`<thead><tr><th>#</th><th>Код</th><th>Название</th><th>Бренд</th><th class="col-hide-md">Тип</th><th>Ветка</th><th>Выручка</th><th class="col-hide-md">Шт</th><th>Отзывы</th><th>ABC</th><th>★</th></tr></thead><tbody>`+
       d.items.map((r,i)=>{
         const isOurs=r.is_ours;
-        const ourBadge=isOurs?`<span class="our-badge${A.dept==='ref'?' ref':''}"><i class="ti ti-star-filled" style="font-size:10px"></i> наш</span>`:'';
+        const ourBadge=isOurs?`<span class="our-badge${A.dept==='frz'?'':' '+A.dept}"><i class="ti ti-star-filled" style="font-size:10px"></i> наш</span>`:'';
         // Код cell: direct Kaspi link if valid article ID
         const kodCell=r.kod&&/^\d{7,10}$/.test(r.kod)
           ?`<a href="https://kaspi.kz/shop/p/${(r.brand||'product').toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${r.kod}/" target="_blank" rel="noopener" style="color:var(--ice);text-decoration:none;font-family:monospace" title="Открыть на Kaspi">${escHtml(r.kod)}</a>`
@@ -2257,10 +2299,11 @@ async function renderUpload(){
     if(!d||!d.length){hist.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Загрузок пока нет</div>';return;}
     const sorted=[...d].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
     hist.innerHTML=sorted.map(u=>{
-      const dept=u.department==='freezers'?'frz':'ref';
+      const deptEntry=DEPTS.find(x=>x.api===u.department)||DMAP.frz;
+      const dept=deptEntry.code;
       const months=(u.months||[]).join(', ')||'—';
       return`<div class="ui">
-        <div class="uic ${dept}"><i class="ti ti-${dept==='frz'?'snowflake':'refrigerator'}"></i></div>
+        <div class="uic ${dept}"><i class="ti ti-${deptEntry.icon}"></i></div>
         <div class="uii">
           <div class="un">${escHtml(u.filename)}</div>
           <div class="um">${fmtN(u.row_count)} строк · ${escHtml(months)} · ${new Date(u.created_at).toLocaleString('ru-RU')}</div>
@@ -2351,7 +2394,7 @@ async function renderSettings(){
   // НАС-01: show current context for AI report
   const aiCtx=g('ai-ctx-info');
   if(aiCtx){
-    const deptLabel=A.dept==='frz'?'Морозильники':'Холод. витрины';
+    const deptLabel=DL[A.dept];
     const monthLabel=A.month||'все месяцы';
     const subLabel=A.sub?` · ${A.sub}`:'';
     aiCtx.innerHTML=`<i class="ti ti-info-circle" style="font-size:13px"></i>
@@ -2800,7 +2843,7 @@ async function renderPriority(){
 
     for(const D of active){
       const _dStartIdx = oppList.length;
-      const dColor = D.code==='frz'?'var(--ice)':'var(--green)';
+      const dColor = dcolor(D.code);
       const noRev   = D.st?.review_deficit?.no_reviews||[];
       const fewRev  = D.st?.review_deficit?.few_reviews||[];
       const lowRat  = D.st?.low_rating_skus||[];
@@ -2973,7 +3016,7 @@ async function renderPriority(){
     for(const D of active){ (byDept[D.code] = byDept[D.code]||[]).push(D); }
     for(const deptCode of Object.keys(byDept)){
       const combos = byDept[deptCode];
-      const dColor = deptCode==='frz'?'var(--ice)':'var(--green)';
+      const dColor = dcolor(deptCode);
       const dTag = `<span style="font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;background:${dColor}22;color:${dColor};flex-shrink:0">${combos[0].parentLabel}</span>`;
       const merged = {};
       for(const D of combos){
@@ -3677,7 +3720,7 @@ async function renderTactics(){
     // НАС-01: show context in AI block
     const aiCtxTc=g('ai-ctx-tc');
     if(aiCtxTc){
-      const dl=A.dept==='frz'?'Морозильники':'Холод. витрины';
+      const dl=DL[A.dept];
       const ml=A.month||'все месяцы';
       const sl=A.sub?` · ${A.sub}`:'';
       aiCtxTc.innerHTML=`Приоритеты для: <strong style="color:var(--text)">${dl}${sl}</strong> · Период: <strong style="color:var(--text)">${ml}</strong>`;
