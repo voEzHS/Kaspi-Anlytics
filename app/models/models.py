@@ -12,6 +12,8 @@ from app.core.database import Base
 class DeptEnum(str, enum.Enum):
     freezers = "freezers"       # Морозильники (Лари + Бонеты)
     refrigerated = "refrigerated"  # Холодильные витрины
+    ovens = "ovens"             # Жарочные шкафы
+    ice_makers = "ice_makers"   # Льдогенераторы
 
 
 class Upload(Base):

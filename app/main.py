@@ -222,7 +222,7 @@ async def health():
 async def debug():
     """Diagnostic (admin-only): shows what brands are in DB vs what our_brands setting contains."""
     async with AsyncSessionLocal() as db:
-        # 1. What brands exist in kaspi_rows (freezers)
+        # 1. What brands exist in kaspi_rows (across all departments)
         q = select(KaspiRow.brand, func.count(KaspiRow.id).label("rows")).group_by(KaspiRow.brand).order_by(func.count(KaspiRow.id).desc()).limit(30)
         res = await db.execute(q)
         brands_in_db = [{"brand": r.brand, "rows": r.rows} for r in res.all()]
@@ -266,7 +266,7 @@ async def list_endpoints():
     return {
         "uploads": [
             "POST   /api/v1/uploads/           — upload Excel (form: file + department)",
-            "GET    /api/v1/uploads/            — list uploads [?department=freezers]",
+            "GET    /api/v1/uploads/            — list uploads [?department=freezers|refrigerated|ovens|ice_makers]",
             "DELETE /api/v1/uploads/{id}        — delete upload + its rows",
         ],
         "analytics": [
@@ -286,7 +286,7 @@ async def list_endpoints():
             "PUT    /api/v1/settings/           — save settings",
         ],
         "common_params": {
-            "department": "freezers | refrigerated",
+            "department": "freezers | refrigerated | ovens | ice_makers",
             "month": "string, e.g. 'Январь 2025'",
             "subtype": "string, e.g. 'Ларь' | 'Бонета'",
         },

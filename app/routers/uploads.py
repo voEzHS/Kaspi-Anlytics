@@ -340,7 +340,7 @@ async def auth_check(x_admin_token: Optional[str] = Header(None)):
 @router.post("/", summary="Upload Excel matrix")
 async def upload_file(
     file: UploadFile = File(...),
-    department: str = Form(...),   # "freezers" | "refrigerated"
+    department: str = Form(...),   # "freezers" | "refrigerated" | "ovens" | "ice_makers"
     month: Optional[str] = Form(None),   # override month for all rows
     db: AsyncSession = Depends(get_db),
     _: None = Depends(require_admin),
