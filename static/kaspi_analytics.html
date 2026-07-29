@@ -1452,6 +1452,28 @@ function initScrollReveal(){
   let _st;
   new MutationObserver(()=>{clearTimeout(_st);_st=setTimeout(scan,150);})
     .observe(document.querySelector('.main')||document.body,{childList:true,subtree:true});
+
+  // БАГ 29.07: страницы (Обзор/Каталог/Тактика/Приоритеты и суб-вьюхи Каталога)
+  // переключаются через display:none↔block (showPage/_applyCatalogView/
+  // _applyPriScope), а не через реальный скролл. IntersectionObserver
+  // добавляет .revealed ОДИН раз и сразу делает unobserve() — если секция
+  // потом скрывается (display:none) и возвращается снова, повторного
+  // intersect-события уже не будет, а CSS-transition не переигрывается сам —
+  // контент замирает на opacity:0 навсегда (даже с классами reveal-ready
+  // revealed на месте). Чиним: при каждой активации .page форсируем
+  // reflow + повторный revealed для уже "провзаимодействовавших" секций.
+  new MutationObserver(muts=>{
+    muts.forEach(m=>{
+      const el=m.target;
+      if(el.classList&&el.classList.contains('page')&&el.classList.contains('active')){
+        el.querySelectorAll('.sec.reveal-ready.revealed').forEach(sec=>{
+          sec.classList.remove('revealed');
+          void sec.offsetHeight;
+          sec.classList.add('revealed');
+        });
+      }
+    });
+  }).observe(document.querySelector('.main')||document.body,{attributes:true,attributeFilter:['class'],subtree:true});
 }
 
 // ── TOP LOADING BAR (с in-flight счётчиком для параллельных запросов) ────
@@ -1726,13 +1748,19 @@ function setPriScope(scope){
   renderActive();
 }
 function updatePageTitle(name){
-  const base=PTITLES[name||document.querySelector('.nb.active')?.dataset.p]||'';
+  // БАГ 29.07: раньше все ветки ниже проверяли «сырой» параметр name — если
+  // функция вызывалась без аргумента (напр. из setDept() при смене отдела на
+  // уже открытой странице), name оставался undefined, ветки priority/catalog
+  // никогда не совпадали, и заголовок молча терял название отдела/вида.
+  // Разрешаем эффективное имя ОДИН раз и используем его везде ниже.
+  const effName = name || document.querySelector('.nb.active')?.dataset.p;
+  const base=PTITLES[effName]||'';
   let title;
-  if(name==='priority'){
+  if(effName==='priority'){
     title=(A.priScope||'dept')==='company'
       ? 'Приоритеты по деньгам — все категории'
       : `Приоритеты — ${DL[A.dept]}${A.sub?' / '+A.sub:''}`;
-  } else if(name==='catalog'){
+  } else if(effName==='catalog'){
     const viewLabel=(CATALOG_VIEWS.find(v=>v.id===A.catalogView)||CATALOG_VIEWS[0]).label;
     title=`Каталог — ${viewLabel}`;
   } else {
@@ -1881,6 +1909,11 @@ function setDept(d){
   // Glitch logo icon on department switch
   const lic=document.querySelector('.logo-ic');
   if(lic){lic.classList.remove('glitching');void lic.offsetWidth;lic.classList.add('glitching');setTimeout(()=>lic.classList.remove('glitching'),500);}
+  // БАГ 29.07: смена отдела обновляла данные, но не заголовок раздела — H1
+  // оставался со старым названием отдела (напр. «Приоритеты — Морозильники»
+  // после переключения на «Холод. витрины»), хотя бейдж и таблицы уже
+  // показывали правильный отдел. Обновляем заголовок вместе с данными.
+  updatePageTitle();
   loadMonths();loadSubtypes();loadCounts();renderActive();
 }
 
