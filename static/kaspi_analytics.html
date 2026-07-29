@@ -1311,11 +1311,20 @@ function scrambleEl(el,orig){
 // ── TYPEWRITER (ТИП-03: адаптивная скорость — короткие быстро, длинные без анимации) ──
 function typewriterEl(el,text,speed=20){
   if(!el||!text)return;
+  // Баг найден 29.07 (скрин от Дамира — «Оббзоорр —— ЛЛааррьь»): при быстрой
+  // навигации (напр. выбор отдела сразу с подтипом) updatePageTitle() вызывался
+  // дважды подряд, и два независимых setTimeout-цикла писали в один el.textContent
+  // одновременно, перемежая символы. Токен поколения — новый вызов инвалидирует
+  // предыдущий, старый цикл сам останавливается вместо порчи текста.
+  const gen=(el._twGen=(el._twGen||0)+1);
   // Для длинных заголовков (>20 символов) — пропустить анимацию
   if(text.length>20){el.textContent=text;return;}
   el.textContent='';
   let i=0;
-  const t=()=>{if(i<text.length){el.textContent+=text[i++];setTimeout(t,speed);}};
+  const t=()=>{
+    if(el._twGen!==gen)return; // более новый вызов уже перехватил элемент
+    if(i<text.length){el.textContent+=text[i++];setTimeout(t,speed);}
+  };
   t();
 }
 
