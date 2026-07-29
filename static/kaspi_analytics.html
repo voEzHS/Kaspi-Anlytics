@@ -156,9 +156,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 }
 
 /* ── TYPE TAB BAR ──────────────────────────────────────────────────── */
-.type-bar{display:flex;align-items:center;gap:6px;padding:10px 24px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto}
-.type-bar::-webkit-scrollbar{height:3px}
-.type-bar::-webkit-scrollbar-thumb{background:var(--border)}
+/* UX-структурный редизайн 29.07 (фидбек по скриншоту): раньше Тип-фильтр
+   рендерился рядом пилюль (.type-tab), визуально неотличимых от «Смотреть
+   по» в Каталоге — два разных по смыслу контрола (фильтр данных vs
+   переключатель навигации) выглядели как одно и то же, отсюда ощущение
+   хаоса. Теперь Тип — компактный дропдаун в духе фильтра «Месяц», без
+   своего цветного фона/рамки — явно читается как фильтр, а не как меню. */
+.type-bar{display:flex;align-items:center;gap:8px;padding:8px 24px;flex-shrink:0}
 .type-tab{padding:10px 14px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--s2);color:var(--muted);border-radius:20px;transition:background .15s var(--ease-out),color .15s var(--ease-out),border-color .15s var(--ease-out),transform .12s var(--ease-out);white-space:nowrap;display:flex;align-items:center;gap:5px;min-height:44px}
 .type-tab:active{transform:scale(.97)}
 .type-tab:hover{background:var(--s3);color:var(--text);border-color:var(--muted)}
@@ -696,8 +700,14 @@ textarea.inp::placeholder{color:var(--muted)}
        Computed instantly from already-loaded analytics data (no extra API/AI call per page). -->
   <div class="top-insight" id="top-insight" style="display:none"></div>
 
-  <!-- TYPE TAB BAR — primary navigation by product type -->
-  <div class="type-bar type-bar-hide" id="type-bar"></div>
+  <!-- TYPE FILTER — компактный дропдаун вместо ряда пилюль (см. CSS-комментарий
+       выше и rebuildTypeTabs()) -->
+  <div class="type-bar type-bar-hide" id="type-bar">
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap">
+      <i class="ti ti-category" style="font-size:13px"></i>Тип:
+      <select class="sel" id="type-sel" aria-label="Фильтр по типу товара"></select>
+    </label>
+  </div>
 
   <!-- SIDEBAR OVERLAY (mobile) -->
   <div class="sb-overlay" id="sb-overlay" onclick="toggleSidebar()"></div>
@@ -1935,10 +1945,15 @@ function rebuildTypeTabs(){
   const bar=g('type-bar');
   if(!A.subs||A.subs.length<2){bar.className='type-bar type-bar-hide';A.sub='';return;}
   bar.className='type-bar';
-  const ac='active-'+(DMAP[A.dept]||DMAP.frz).letter;
-  bar.innerHTML=
-    `<button class="type-tab ${!A.sub?ac:''}" onclick="setSub('')"><i class="ti ti-layout-grid"></i>Все типы</button>`+
-    A.subs.map(t=>`<button class="type-tab ${A.sub===t?ac:''}" onclick="setSub('${t}')"><i class="ti ${typeIcon(t)}"></i>${t}</button>`).join('');
+  // UX-структурный редизайн 29.07: дропдаун вместо ряда пилюль (см. комментарий
+  // у .type-bar в CSS) — тот же A.sub/setSub(), просто другое представление.
+  const sel=g('type-sel');
+  if(sel){
+    sel.innerHTML=`<option value="">Все типы</option>`+
+      A.subs.map(t=>`<option value="${escHtml(t)}">${escHtml(capFirst(t))}</option>`).join('');
+    sel.value=A.sub||'';
+    sel.onchange=()=>setSub(sel.value);
+  }
   // also rebuild legacy chips (hidden but keep for legacy code refs)
   const cc='c'+(DMAP[A.dept]||DMAP.frz).letter;
   if(g('chips')) g('chips').innerHTML=`<span class="chip ${!A.sub?cc:''}" onclick="setSub('')">Все</span>`+
