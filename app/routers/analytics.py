@@ -331,3 +331,41 @@ async def get_monthly_trends(
         return {}
     our_brands = await _get_our_brands(db)
     return engine.calc_monthly_trends(rows, our_brands)
+
+
+@router.get("/whats-changed")
+async def get_whats_changed(
+    department: str = Query(...),
+    subtype: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Ranked list of segments/brands/products that moved OUR revenue the most
+    between the latest month and the one before it. Powers the "Пульс отдела"
+    ranked "что изменилось" list (IA audit, июль 2026) so a manager doesn't
+    have to manually diff Ветки and Бренды tables by hand.
+    """
+    rows = await _fetch_rows(db, department, month=None, subtype=subtype)
+    if not rows:
+        return {"month": None, "prev_month": None, "factors": []}
+    our_brands = await _get_our_brands(db)
+    return engine.calc_whats_changed(rows, our_brands)
+
+
+@router.get("/sku-history")
+async def get_sku_history(
+    department: str = Query(...),
+    kod: Optional[str] = Query(None),
+    name: Optional[str] = Query(None),
+    subtype: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Month-by-month history for a single product (by kod, or exact name as a
+    fallback). Lets the product drill-down modal go one level deeper instead
+    of dead-ending at a flat list (IA audit, июль 2026 — Уровень 3 «Товар»).
+    """
+    if not kod and not name:
+        raise HTTPException(400, "Provide kod or name")
+    rows = await _fetch_rows(db, department, month=None, subtype=subtype)
+    return engine.calc_sku_history(rows, kod=kod or "", name=name or "")

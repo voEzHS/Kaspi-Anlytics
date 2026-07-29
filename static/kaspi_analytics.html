@@ -73,6 +73,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .ldk-v{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700}
 .ldk-l{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
 .landing-dept-empty{font-size:12px;color:var(--muted)}
+/* IA-аудит июль 2026, Фаза 3: статус ОК/Внимание/Критично на стартовом экране */
+.landing-status-badge{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;text-transform:uppercase;letter-spacing:.3px}
 .landing-row-chevron{color:var(--muted);font-size:16px;flex-shrink:0;transition:transform .2s var(--ease-out)}
 .landing-row.expanded .landing-row-chevron{transform:rotate(90deg)}
 .landing-subtypes{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)}
@@ -166,6 +168,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .type-tab.active-i{background:rgba(34,211,238,.15);color:var(--icemk);border-color:rgba(34,211,238,.5)}
 .type-tab .tcnt{font-size:11px;background:rgba(0,0,0,.2);padding:1px 5px;border-radius:10px;font-weight:400}
 .type-bar-hide{display:none}
+
+/* Приоритеты: объединённый Тактика+Приоритеты с переключателем области действия
+   (IA-аудит, июль 2026 — Часть IV, «Слой действий»). Один раздел вместо двух
+   почти одинаковых страниц, один AI-триггер. */
+.pri-scope-bar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.pri-scope-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-right:2px}
+.pri-scope-btn{padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--s2);color:var(--muted);border-radius:20px;transition:background .15s var(--ease-out),color .15s var(--ease-out),border-color .15s var(--ease-out);display:flex;align-items:center;gap:6px}
+.pri-scope-btn:hover{background:var(--s3);color:var(--text)}
+.pri-scope-btn.active{background:rgba(63,185,80,.15);color:var(--green);border-color:rgba(63,185,80,.5)}
 
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{padding:3px 10px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid var(--border);background:var(--s2);color:var(--muted);transition:background .15s var(--ease-out),color .15s var(--ease-out),border-color .15s var(--ease-out),transform .12s var(--ease-out)}
@@ -625,7 +636,6 @@ textarea.inp::placeholder{color:var(--muted)}
     <button class="nb" data-p="products" onclick="showPage('products')"><i class="ti ti-packages nav-ic" style="color:var(--yellow);background:rgba(210,153,34,.14)"></i>Товары</button>
     <button class="nb" data-p="abc" onclick="showPage('abc')"><i class="ti ti-chart-pie nav-ic" style="color:var(--red);background:rgba(248,81,73,.14)"></i>ABC-анализ</button>
     <button class="nb" data-p="trends" onclick="showPage('trends')"><i class="ti ti-chart-line nav-ic" style="color:var(--green);background:rgba(63,185,80,.14)"></i>Тренды</button>
-    <button class="nb" data-p="tactics" onclick="showPage('tactics')"><i class="ti ti-target nav-ic" style="color:var(--purple);background:rgba(163,113,247,.14)"></i>Тактика</button>
     <button class="nb" data-p="priority" onclick="showPage('priority')"><i class="ti ti-cash nav-ic" style="color:var(--green);background:rgba(63,185,80,.14)"></i>Приоритеты</button>
   </div>
 
@@ -685,6 +695,7 @@ textarea.inp::placeholder{color:var(--muted)}
       <div id="ov-ct" style="display:none">
         <div class="kpi-grid" id="kpi-g"></div>
         <div id="cmp-b"></div>
+        <div id="whats-changed-box"></div>
         <div class="g2">
           <div class="sec"><div class="sh"><span class="st">Динамика выручки</span></div><div class="sb2"><div class="cw"><canvas id="ch-m"></canvas></div></div></div>
           <div class="sec"><div class="sh"><span class="st">Топ-10 брендов</span><button class="btn-csv" onclick="exportCSV('t-tb','top-brands')"><i class="ti ti-download" style="font-size:12px"></i>CSV</button></div><div class="sb2"><div class="tw"><table id="t-tb" aria-label="Топ брендов по выручке"></table></div></div></div>
@@ -768,6 +779,14 @@ textarea.inp::placeholder{color:var(--muted)}
           <div class="sec"><div class="sh"><span class="st">Наши C-товары</span></div><div class="sb2"><div class="tw"><table id="t-ac" aria-label="Наши C-товары (хвост ассортимента)"></table></div></div></div>
         </div>
       </div>
+    </div>
+
+    <!-- Переключатель области действия — общий для Тактики и Приоритетов
+         (объединены в один раздел, IA-аудит июль 2026) -->
+    <div class="pri-scope-bar" id="pri-scope-bar" style="display:none">
+      <span class="pri-scope-label">Область действия:</span>
+      <button class="pri-scope-btn" data-scope="dept" onclick="setPriScope('dept')"><i class="ti ti-target"></i>Этот отдел</button>
+      <button class="pri-scope-btn" data-scope="company" onclick="setPriScope('company')"><i class="ti ti-building-skyscraper"></i>Вся компания</button>
     </div>
 
     <!-- PRIORITY -->
@@ -943,20 +962,9 @@ textarea.inp::placeholder{color:var(--muted)}
       </div>
 
       <div class="sec">
-        <div class="sh"><span class="st"><i class="ti ti-robot" style="color:var(--ice)"></i> Стратегия от AI-аналитика</span></div>
-        <div class="sb2">
-          <div id="ai-ctx-info" style="font-size:12px;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <i class="ti ti-info-circle" style="font-size:13px"></i>
-            <span>Стратегия действий от AI-аналитика (Claude)</span>
-          </div>
-          <div class="ai-filters">
-            <select class="sel" id="ai-vetka-sel" style="min-width:200px">
-              <option value="">Все ветки (общая стратегия)</option>
-            </select>
-          </div>
-          <textarea class="inp" id="ai-query" rows="2" style="width:100%;margin-bottom:12px" placeholder="Необязательно — свой вопрос, например: «что делать с ларями 500-600л» или «почему FRIGGIER теряет долю»"></textarea>
-          <button class="btn btn-ice" onclick="genAI()" id="ai-btn"><i class="ti ti-robot"></i>Определить приоритеты</button>
-          <div id="ai-r" style="margin-top:18px"></div>
+        <div class="sb2" style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px">
+          <i class="ti ti-info-circle" style="font-size:13px"></i>
+          <span>Стратегия от AI-аналитика переехала в раздел <strong style="color:var(--text);cursor:pointer" onclick="showPage('priority')">Приоритеты</strong> — один генератор вместо нескольких копий.</span>
         </div>
       </div>
     </div>
@@ -1042,6 +1050,58 @@ if(!window._brands) window._brands=new Set(['AOLIEGE','FRIGGIER','LEADBROS','XIN
 // ── HELPERS ──
 function dc(){return (DMAP[A.dept]||DMAP.frz).chart}
 function fmtR(v){v=+v||0;if(v>=1e9)return(v/1e9).toFixed(1)+' млрд ₸';if(v>=1e6)return(v/1e6).toFixed(1)+' млн ₸';if(v>=1e3)return(v/1e3).toFixed(0)+' тыс ₸';return v.toFixed(0)+' ₸'}
+// ── IA-аудит июль 2026, Фаза 2: месяц-к-месяцу дельта прямо в таблицах Ветки/
+//    Бренды, вместо того чтобы открывать вкладку дважды и сравнивать в уме. ──
+function deltaBadge(pct){
+  if(pct===null||pct===undefined||!isFinite(pct)) return '<span style="color:var(--muted);font-size:11px">—</span>';
+  const up=pct>=0;
+  const color=Math.abs(pct)<1?'var(--muted)':up?'var(--green)':'var(--red)';
+  const arrow=Math.abs(pct)<1?'':up?'▲':'▼';
+  return `<span style="color:${color};font-size:12px;font-weight:600;white-space:nowrap">${arrow} ${up&&pct>0?'+':''}${pct.toFixed(1)}%</span>`;
+}
+// ── IA-аудит июль 2026, Фаза 3: единая формула позиционного score (0–100).
+//    Раньше жила только внутри renderTactics() — вынесена сюда как общая
+//    функция, чтобы Тактика/Приоритеты и статус-бейджи на стартовом экране
+//    всегда показывали ОДНО И ТО ЖЕ число, без риска рассинхронизации формул. ──
+function computeDeptScore(ov, vetkaArr, st){
+  ov=ov||{}; vetkaArr=vetkaArr||[]; st=st||{};
+  const ourShare=+(ov.our_share_pct||0);
+  const ourSku=ov.our_sku||0;
+  const ourAbcA=ov.our_abc_a||0;
+  const ourRating=+(ov.our_avg_rating||0);
+  const vetkaWithUs=vetkaArr.filter(v=>v.our_revenue>0);
+  const vetkaTotal=vetkaArr.length;
+  const reviewDef=st.review_deficit||{};
+  const noReviews=reviewDef.no_reviews||[];
+  const fewReviews=reviewDef.few_reviews||[];
+
+  let score=0;
+  const _s1=ourShare>=25?25:ourShare>=15?18:ourShare>=8?11:ourShare>=3?5:2; score+=_s1;
+  const abcAShare=ourSku>0?ourAbcA/ourSku:0;
+  const _s2=abcAShare>=0.5?15:abcAShare>=0.3?10:abcAShare>=0.1?6:ourAbcA>0?3:0; score+=_s2;
+  const _s3=ourRating>=4.8?15:ourRating>=4.7?11:ourRating>=4.5?7:ourRating>=4.0?3:0; score+=_s3;
+  const _s4=vetkaTotal>0?Math.round((vetkaWithUs.length/vetkaTotal)*20):0; score+=_s4;
+  const reviewCoverage=ourSku>0?Math.max(0,1-(noReviews.length+fewReviews.length*0.5)/ourSku):1;
+  const _s5=Math.round(reviewCoverage*15); score+=_s5;
+  score=Math.min(100,score);
+
+  const breakdown=[
+    {label:'Доля рынка',pts:_s1,max:25,hint:`${ourShare.toFixed(1)}%`},
+    {label:'ABC-A товары',pts:_s2,max:15,hint:`${(abcAShare*100).toFixed(0)}% SKU`},
+    {label:'Рейтинг',pts:_s3,max:15,hint:`${ourRating.toFixed(2)}★`},
+    {label:'Покрытие веток',pts:_s4,max:20,hint:`${vetkaWithUs.length}/${vetkaTotal}`},
+    {label:'Отзывы',pts:_s5,max:15,hint:`${Math.round(reviewCoverage*100)}%`},
+  ];
+  const color=score>=70?'var(--green)':score>=40?'var(--yellow)':'var(--red)';
+  const label=score>=70?'Сильная позиция':score>=40?'Есть потенциал':'Критично — нужны действия';
+  const statusClass=score>=70?'good':score>=40?'warn':'danger';
+  const statusIcon=score>=70?'ti-circle-check':score>=40?'ti-alert-triangle':'ti-alert-circle';
+  const statusText=score>=70?'ОК':score>=40?'Внимание':'Критично';
+  return {score, breakdown, color, label, statusClass, statusIcon, statusText};
+}
+function statusBadgeHtml(stat){
+  return `<span class="landing-status-badge" style="background:${stat.color}1f;color:${stat.color}"><i class="ti ${stat.statusIcon}" style="font-size:11px"></i>${stat.statusText}</span>`;
+}
 // ── StyleSeed "Large Number + Small Unit" rule (design-skills/styleseed-design-language.md,
 //    §2): the eye should land on the number first — unit wraps in a smaller, lighter span
 //    instead of running at the same size/weight as the figure it's attached to. ──
@@ -1426,25 +1486,34 @@ function renderTopInsight(){
 
 function showPage(name){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  const _pg=g('page-'+name);
-  _pg.style.animation='none';
-  void _pg.offsetHeight; // force reflow so CSS animation restarts
-  _pg.style.animation='';
-  _pg.classList.add('active');
+  const scopeBar=g('pri-scope-bar');
+  if(name==='priority'){
+    // Объединённый раздел Тактика+Приоритеты (IA-аудит, июль 2026) — показываем
+    // тот вид, что соответствует текущей области действия (по умолчанию — «Этот отдел»)
+    if(scopeBar) scopeBar.style.display='';
+    _applyPriScope(A.priScope||'dept');
+  } else {
+    if(scopeBar) scopeBar.style.display='none';
+    const _pg=g('page-'+name);
+    _pg.style.animation='none';
+    void _pg.offsetHeight; // force reflow so CSS animation restarts
+    _pg.style.animation='';
+    _pg.classList.add('active');
+  }
   document.querySelectorAll('.nb').forEach(b=>{
     const isActive=b.dataset.p===name;
     b.classList.toggle('active',isActive);
     if(isActive)b.setAttribute('aria-current','page');
     else b.removeAttribute('aria-current');
   });
-  // Скрываем фильтры типов и отдела на специальных страницах
-  const isPriority = name==='priority';
-  const hideTabs  = isPriority || name==='upload' || name==='settings';
-  const hideMonth = isPriority || name==='trends';
+  // Скрываем фильтры типов и отдела только в области «Вся компания» (кросс-отдельная)
+  const isCompanyScope = name==='priority' && (A.priScope||'dept')==='company';
+  const hideTabs  = isCompanyScope || name==='upload' || name==='settings';
+  const hideMonth = isCompanyScope || name==='trends';
   const tb = g('type-bar');
   if(tb) tb.style.display = hideTabs ? 'none' : '';
   const deptSec = document.querySelector('.dept-sec');
-  if(deptSec) deptSec.style.display = isPriority ? 'none' : '';
+  if(deptSec) deptSec.style.display = isCompanyScope ? 'none' : '';
   const monthSel = g('month-sel');
   if(monthSel) monthSel.style.display = hideMonth ? 'none' : '';
   // ТОП-03: показываем объяснение на Тренды почему фильтр месяца скрыт
@@ -1463,9 +1532,42 @@ function showPage(name){
   if(hidePeriod){const ti=g('top-insight');if(ti)ti.style.display='none';}
   else renderTopInsight();
 }
+// Toggles which of the two underlying .page divs (page-tactics / page-priority)
+// carries .active — does NOT touch filter-bar visibility or trigger a render;
+// showPage() and setPriScope() each handle those themselves for their own context.
+function _applyPriScope(scope){
+  A.priScope=scope;
+  const deptPage=g('page-tactics'), compPage=g('page-priority');
+  document.querySelectorAll('.pri-scope-btn').forEach(b=>b.classList.toggle('active', b.dataset.scope===scope));
+  const target = scope==='dept' ? deptPage : compPage;
+  const other  = scope==='dept' ? compPage : deptPage;
+  if(other) other.classList.remove('active');
+  if(target){
+    target.style.animation='none'; void target.offsetHeight; target.style.animation='';
+    target.classList.add('active');
+  }
+}
+// Bound to the «Этот отдел / Вся компания» toggle buttons — switches scope
+// while already on the merged Приоритеты page (no full navigation).
+function setPriScope(scope){
+  _applyPriScope(scope);
+  const isCompanyScope = scope==='company';
+  const tb=g('type-bar'); if(tb) tb.style.display=isCompanyScope?'none':'';
+  const deptSec=document.querySelector('.dept-sec'); if(deptSec) deptSec.style.display=isCompanyScope?'none':'';
+  const monthSel=g('month-sel'); if(monthSel) monthSel.style.display=isCompanyScope?'none':'';
+  updatePageTitle('priority');
+  renderActive();
+}
 function updatePageTitle(name){
   const base=PTITLES[name||document.querySelector('.nb.active')?.dataset.p]||'';
-  const title=name==='priority'?'Приоритеты по деньгам — все категории':(A.sub?`${base} — ${A.sub}`:base);
+  let title;
+  if(name==='priority'){
+    title=(A.priScope||'dept')==='company'
+      ? 'Приоритеты по деньгам — все категории'
+      : `Приоритеты — ${DL[A.dept]}${A.sub?' / '+A.sub:''}`;
+  } else {
+    title=A.sub?`${base} — ${A.sub}`:base;
+  }
   typewriterEl(g('tb-title'),title);
   // Update active-filter chip — показываем только при реальных (не дефолтных) фильтрах (ТОП-01)
   const chip=g('active-filter-chip');
@@ -1486,17 +1588,26 @@ function updatePageTitle(name){
 async function initLanding(){
   const list = g('landing-grid');
   if(!list) return;
+  // IA-аудит июль 2026, Фаза 3: тянем vetka+strategy вместе с overview, чтобы
+  // сразу показать статус ОК/Внимание/Критично (тот же score, что в шапке
+  // Приоритетов) — видно, где "пожар", ещё до захода в отдел.
   const results = await Promise.all(
-    DEPTS.map(d => apig('/analytics/overview?department='+d.api).catch(()=>null))
+    DEPTS.map(d => Promise.all([
+      apig('/analytics/overview?department='+d.api).catch(()=>null),
+      apig('/analytics/vetka?department='+d.api).catch(()=>null),
+      apig('/analytics/strategy?department='+d.api).catch(()=>null),
+    ]))
   );
   list.innerHTML = DEPTS.map((d,i) => {
-    const ov = results[i];
+    const [ov, vt, st] = results[i];
     const hasData = ov && ov.total_revenue > 0;
+    const stat = hasData ? computeDeptScore(ov, vt?.vetka||[], st||{}) : null;
     return `<div class="landing-row${hasData?'':' no-data'}" data-dept="${d.code}" onclick="selectLandingDept('${d.code}')">
       <div class="landing-row-main">
         <div class="landing-dept-ic" style="background:${drgba(d.code,.15)};color:${dcolor(d.code)}"><i class="ti ti-${d.icon}"></i></div>
         <div class="landing-row-info">
           <div class="landing-dept-label">${d.label}</div>
+          ${stat ? statusBadgeHtml(stat) : ''}
           ${hasData ? `
             <div class="landing-dept-kpis">
               <div><span class="ldk-v">${fmtR(ov.total_revenue)}</span><span class="ldk-l">рынок</span></div>
@@ -1901,12 +2012,16 @@ function _deepMerge(a,b){
 async function renderOverview(){
   ss('ov','ld');
   try{
-    const [d, intel] = await Promise.all([
+    const wcQ=new URLSearchParams({department:DA[A.dept]});
+    if(A.sub)wcQ.set('subtype',A.sub);
+    const [d, intel, wc] = await Promise.all([
       apig('/analytics/overview?'+qsp()),
       apig('/analytics/intelligence?'+qsp()).catch(()=>null),
+      apig('/analytics/whats-changed?'+wcQ).catch(()=>null),
     ]);
     if(!d||!d.total_revenue){ss('ov','em');return;}
     ss('ov','ct');
+    renderWhatsChanged(wc);
 
     // Market position banner (from intelligence)
     const mp = intel?.market_position;
@@ -2044,18 +2159,76 @@ async function renderOverview(){
   }catch(e){ss('ov','em',e.message);console.error(e);}
 }
 
+// IA-аудит июль 2026, Фаза 2: ранжированный список «что изменилось» на Обзоре —
+// вместо того чтобы человек сам сравнивал цифры глазами, сразу показываем, какие
+// сегменты/бренды/товары внесли наибольший вклад в изменение НАШЕЙ выручки за
+// последний месяц, и даём сразу провалиться в причину (drillGeneric / история SKU).
+function renderWhatsChanged(wc){
+  const box=g('whats-changed-box');
+  if(!box)return;
+  if(!wc||!wc.factors||!wc.factors.length||!wc.month||!wc.prev_month){box.innerHTML='';return;}
+  window._wcFactors=wc.factors;
+  const typeIcon={'сегмент':'ti-chart-donut-3','бренд':'ti-building-store','товар':'ti-package'};
+  const typeColor={'сегмент':'var(--yellow)','бренд':'var(--purple)','товар':'var(--ice)'};
+  box.innerHTML=`<div class="sec" style="margin-bottom:20px">
+    <div class="sh"><span class="st">Что изменилось — ${escHtml(wc.prev_month)} → ${escHtml(wc.month)}</span></div>
+    <div class="sb2"><div style="display:flex;flex-direction:column;gap:4px">
+      ${wc.factors.map((f,i)=>`
+        <div onclick="openWhatsChangedDrill(${i})" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid var(--border);transition:background .15s" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='transparent'">
+          <span style="width:26px;height:26px;border-radius:6px;background:${typeColor[f.type]||'var(--muted)'}22;color:${typeColor[f.type]||'var(--muted)'};display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ${typeIcon[f.type]||'ti-tag'}" style="font-size:13px"></i></span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(f.label||'—')}</div>
+            <div style="font-size:11px;color:var(--muted);text-transform:capitalize">${escHtml(f.type||'')} · ${fmtR(f.previous)} → ${fmtR(f.current)}</div>
+          </div>
+          ${deltaBadge(f.delta_pct)}
+        </div>`).join('')}
+    </div></div>
+  </div>`;
+}
+function openWhatsChangedDrill(i){
+  const f=(window._wcFactors||[])[i]; if(!f)return;
+  if(f.type==='товар'&&(f.kod||f.name)){
+    openSkuHistory({apiName:DA[A.dept], kod:f.kod||'', name:f.name||'', brand:f.brand||'', vetka:f.vetka||'', subtype:A.sub||null});
+    return;
+  }
+  const tagColor=f.type==='сегмент'?'var(--yellow)':'var(--purple)';
+  const kindLabel=f.type==='сегмент'?'Сегмент':f.type==='бренд'?'Бренд':'Товар';
+  drillGeneric({
+    apiName:DA[A.dept], month:null, subtype:A.sub||null,
+    vetka:f.type==='сегмент'?f.label:(f.vetka||null),
+    brand:f.type==='бренд'?f.label:(f.brand||null),
+    title:`${kindLabel} «${escHtml(f.label)}» — что изменилось`,
+    chips:_chip(DL[A.dept],'var(--ice)')+(A.sub?_chip(A.sub,'var(--ice)'):'')+_chip(escHtml(f.label),tagColor),
+  });
+}
+
 // ── BRANDS ──
 async function renderBrands(){
   ss('br','ld');
   try{
-    const [d, intel] = await Promise.all([
+    const trendsQ=new URLSearchParams({department:DA[A.dept]});
+    if(A.sub)trendsQ.set('subtype',A.sub);
+    const [d, intel, trends] = await Promise.all([
       apig('/analytics/brands?'+qsp()),
       apig('/analytics/intelligence?'+qsp()).catch(()=>null),
+      apig('/analytics/monthly-trends?'+trendsQ).catch(()=>null),
     ]);
     const brands=d.brands||[];
     if(!brands.length){ss('br','em');return;}
     ss('br','ct');
     window._brData=brands;
+
+    // Δ мес.: последний месяц vs предыдущий, по каждому бренду (переиспользуем
+    // /monthly-trends — те же данные, что уже строят вкладку Тренды, без
+    // нового бэкенд-запроса под эту таблицу отдельно).
+    const brandDeltaMap={};
+    if(trends?.by_brand&&trends.months&&trends.months.length>=2){
+      const li=trends.months.length-1, pi=li-1;
+      trends.by_brand.forEach(b=>{
+        const cur=b.months?.[li]||0, prev=b.months?.[pi]||0;
+        brandDeltaMap[b.brand]=prev>0?((cur-prev)/prev*100):(cur>0?null:0);
+      });
+    }
     const top10=brands.slice(0,10);
     mkDonut('ch-bd',top10.map(b=>b.brand),top10.map(b=>b.revenue),top10.map((b,i)=>b.is_ours?dc():PAL[i%PAL.length]));
     mkBar('ch-bb',top10.map(b=>b.brand.slice(0,20)),[{label:'Выручка',data:top10.map(b=>b.revenue),backgroundColor:top10.map(b=>b.is_ours?dc():'#2A2A30'),borderRadius:4}],true);
@@ -2065,7 +2238,7 @@ async function renderBrands(){
     const maxAvgRev = Math.max(...brands.map(b=>b.revenue/(b.skus||1)));
 
     // БРН-02: hide cols 7,8 (Отзывов/SKU, ₸/SKU) on narrow screens via col-hide-md
-    g('t-bf').innerHTML=`<thead><tr><th>#</th><th>Бренд</th><th>Выручка</th><th>Доля</th><th>Штуки</th><th>SKU</th><th class="col-hide-md">Отзывов/SKU</th><th class="col-hide-md">₸/SKU</th><th>ABC-A</th><th>★</th></tr></thead><tbody>`+
+    g('t-bf').innerHTML=`<thead><tr><th>#</th><th>Бренд</th><th>Выручка</th><th title="Изменение выручки бренда за последний загруженный месяц vs предыдущий">Δ мес. ⓘ</th><th>Доля</th><th>Штуки</th><th>SKU</th><th class="col-hide-md">Отзывов/SKU</th><th class="col-hide-md">₸/SKU</th><th>ABC-A</th><th>★</th></tr></thead><tbody>`+
       brands.map((b,i)=>{
         const revPerSku = b.revenue/(b.skus||1);
         const avgRev_pct = maxAvgRev>0?(revPerSku/maxAvgRev*100):0;
@@ -2075,6 +2248,7 @@ async function renderBrands(){
           <td class="rn">${i+1}</td>
           <td style="color:${b.is_ours?dc():'inherit'}">${escHtml(b.brand)}${b.is_ours?' ⭐':''}${threatIcon}${kLink(b.top_name||'',b.brand,true,'',b.top_kod||'')}</td>
           <td>${fmtR(b.revenue)}</td>
+          <td>${deltaBadge(brandDeltaMap[b.brand])}</td>
           <td><div class="bw"><div class="bbg"><div class="bf ${A.dept}" style="width:${Math.min(+b.market_share_pct||0,100)}%"></div></div><span class="bp">${(+b.market_share_pct||0).toFixed(1)}%</span></div></td>
           <td>${fmtN(b.units)}</td>
           <td>${b.skus||0}</td>
@@ -2116,9 +2290,12 @@ async function renderBrands(){
 async function renderVetka(){
   ss('vt','ld');
   try{
-    const [d, intel] = await Promise.all([
+    const trendsQ=new URLSearchParams({department:DA[A.dept]});
+    if(A.sub)trendsQ.set('subtype',A.sub);
+    const [d, intel, trends] = await Promise.all([
       apig('/analytics/vetka?'+qsp()),
       apig('/analytics/intelligence?'+qsp()).catch(()=>null),
+      apig('/analytics/monthly-trends?'+trendsQ).catch(()=>null),
     ]);
     const vetka=d.vetka||[];
     if(!vetka.length){ss('vt','em');return;}
@@ -2128,6 +2305,18 @@ async function renderVetka(){
     // Build intelligence map by vetka name
     const segMap={};
     (intel?.segment_intelligence||[]).forEach(s=>{segMap[s.vetka]=s;});
+
+    // Δ мес. по рынку сегмента: последний загруженный месяц vs предыдущий,
+    // из /monthly-trends (та же логика, что и во вкладке Тренды — без
+    // отдельного нового запроса на бэкенд под саму таблицу).
+    const vetkaDeltaMap={};
+    if(trends?.by_vetka){
+      Object.entries(trends.by_vetka).forEach(([vName,series])=>{
+        if(!series||series.length<2) return;
+        const cur=series[series.length-1].revenue||0, prev=series[series.length-2].revenue||0;
+        vetkaDeltaMap[vName]=prev>0?((cur-prev)/prev*100):(cur>0?null:0);
+      });
+    }
 
     const top15=vetka.slice(0,15);
     const vLabels=top15.map(v=>v.vetka.slice(0,28));
@@ -2180,6 +2369,7 @@ async function renderVetka(){
         <th>#</th>
         <th>Ветка / Сегмент</th>
         <th style="text-align:right">Рынок ₸</th>
+        <th style="text-align:right" title="Изменение выручки рынка сегмента за последний загруженный месяц vs предыдущий">Δ мес. ⓘ</th>
         <th style="text-align:right">Продажи шт</th>
         <th style="text-align:right">Наша доля</th>
         <th style="text-align:right" class="col-hide-md">Наши шт</th>
@@ -2199,6 +2389,7 @@ async function renderVetka(){
           <td class="rn">${i+1}</td>
           <td style="font-weight:${v.our_revenue>0?'500':'400'}">${escHtml(v.vetka)}</td>
           <td style="text-align:right">${fmtR(v.revenue)}</td>
+          <td style="text-align:right">${deltaBadge(vetkaDeltaMap[v.vetka])}</td>
           <td style="text-align:right;color:var(--muted)">${fmtN(v.units||0)}</td>
           <td style="text-align:right;color:${shareColor}">${v.our_share_pct>0?(+v.our_share_pct).toFixed(1)+'%':'—'}</td>
           <td style="text-align:right;color:var(--muted)" class="col-hide-md">${v.our_units>0?fmtN(v.our_units):'—'}</td>
@@ -2557,19 +2748,8 @@ async function _doUpload(file){
 async function renderSettings(){
   try{const d=await apig('/settings/');if(d.our_brands){const mb=['AOLIEGE','FRIGGIER','LEADBROS','XINGX','MUXXED'];window._brands=new Set([...d.our_brands.map(b=>b.toUpperCase()),...mb]);}}catch{}
   renderBT();
-  loadAIVetkaOptions();
-  _loadCachedAI();
-  // НАС-01: show current context for AI report
-  const aiCtx=g('ai-ctx-info');
-  if(aiCtx){
-    const deptLabel=DL[A.dept];
-    const monthLabel=A.month||'все месяцы';
-    const subLabel=A.sub?` · ${A.sub}`:'';
-    aiCtx.innerHTML=`<i class="ti ti-info-circle" style="font-size:13px"></i>
-      <span>Приоритеты для: <strong style="color:var(--text)">${deptLabel}${subLabel}</strong></span>
-      <span style="color:var(--border)">·</span>
-      <span>Период: <strong style="color:var(--text)">${monthLabel}</strong></span>`;
-  }
+  // AI-генератор стратегии живёт только в разделе Приоритеты (ctx='tc'/'company') —
+  // здесь больше нет своей копии панели, см. loadAIVetkaOptions/_loadCachedAI там.
 }
 // Populate the vetka dropdown for the AI panel, scoped to current department (+subtype).
 // ctx='tc' targets the Tactics-page select, otherwise the Settings-page one.
@@ -2632,6 +2812,92 @@ function closeDrill(){
   if(m){m.remove();document.removeEventListener('keydown',_drillEsc);}
 }
 function _drillEsc(e){if(e.key==='Escape')closeDrill();}
+
+// ── PRODUCT HISTORY — Уровень 3 «Товар» дальше не тупик (IA-аудит, июль
+//    2026): вместо статичного списка можно углубиться в историю конкретного
+//    товара по месяцам. Открывается ПОВЕРХ drillDown/drillGeneric — второй,
+//    отдельный модал, чтобы список под ним не терялся (закрыл историю —
+//    вернулся к списку). ──
+function closeSkuHistory(){
+  const m=document.getElementById('sku-hist-modal');
+  if(m){m.remove();document.removeEventListener('keydown',_skuHistEsc);}
+}
+function _skuHistEsc(e){if(e.key==='Escape')closeSkuHistory();}
+async function openSkuHistory(cfg){
+  const existing=document.getElementById('sku-hist-modal');
+  if(existing)existing.remove();
+  document.removeEventListener('keydown',_skuHistEsc);
+  document.addEventListener('keydown',_skuHistEsc);
+  const modal=document.createElement('div');
+  modal.id='sku-hist-modal';
+  const chips=_chip(DL[A.dept],'var(--ice)')+(cfg.subtype?_chip(cfg.subtype,'var(--ice)'):'')+(cfg.vetka?_chip(cfg.vetka+' л','var(--yellow)'):'');
+  modal.innerHTML=`
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1100;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)closeSkuHistory()">
+      <div style="background:var(--s1);border:1px solid var(--border);border-radius:14px;width:calc(100% - 40px);max-width:720px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;margin:20px">
+        <div style="padding:14px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+            ${chips}
+            <button onclick="closeSkuHistory()" style="margin-left:auto;background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:5px 12px;cursor:pointer;font-size:12px"><i class="ti ti-x"></i></button>
+          </div>
+          <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.4">${escHtml(cfg.name||cfg.kod||'Товар')}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">${escHtml(cfg.brand||'')} ${cfg.kod?'· '+escHtml(cfg.kod):''} · история по месяцам</div>
+        </div>
+        <div id="sku-hist-body" style="overflow-y:auto;padding:16px 20px;flex:1">
+          <div style="text-align:center;padding:40px;color:var(--muted)"><div class="spin" style="margin:0 auto 12px"></div>Загружаю историю...</div>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  try{
+    const p=new URLSearchParams({department:cfg.apiName});
+    if(cfg.kod)p.set('kod',cfg.kod); else if(cfg.name)p.set('name',cfg.name);
+    if(cfg.subtype)p.set('subtype',cfg.subtype);
+    const data=await apig('/analytics/sku-history?'+p.toString());
+    const months=data.months||[];
+    const body=document.getElementById('sku-hist-body');
+    if(!body)return;
+    if(!months.length){
+      body.innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted)">Нет истории по этому товару (только один месяц данных или товар не найден)</div>`;
+      return;
+    }
+    const maxRev=Math.max(...months.map(m=>m.revenue||0),1);
+    body.innerHTML=`
+      <div class="tw" style="margin-bottom:8px">
+        <div style="display:flex;align-items:flex-end;gap:6px;height:120px;padding:8px 0">
+          ${months.map(m=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px" title="${escHtml(m.month)}: ${fmtR(m.revenue)}">
+            <div style="width:100%;background:var(--ice);border-radius:3px 3px 0 0;height:${Math.max(3,Math.round(m.revenue/maxRev*90))}px"></div>
+            <div style="font-size:10px;color:var(--muted);white-space:nowrap">${escHtml(m.month.split(' ')[0].slice(0,3))}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <table style="width:100%;font-size:12px">
+        <thead><tr style="border-bottom:1px solid var(--border)">
+          <th style="padding:6px 8px;text-align:left;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase">Месяц</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase">Выручка</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase">Δ</th>
+          <th style="padding:6px 8px;text-align:right;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase">Штуки</th>
+          <th style="padding:6px 8px;text-align:center;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase">Рейтинг</th>
+          <th style="padding:6px 8px;text-align:center;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase">Отзывы</th>
+        </tr></thead>
+        <tbody>${months.map((m,i)=>{
+          const prev=months[i-1];
+          const delta=prev&&prev.revenue>0?((m.revenue-prev.revenue)/prev.revenue*100):null;
+          return `<tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:6px 8px">${escHtml(m.month)}</td>
+            <td style="padding:6px 8px;text-align:right;font-weight:600">${fmtR(m.revenue)}</td>
+            <td style="padding:6px 8px;text-align:right">${i===0?'<span style="color:var(--muted)">—</span>':deltaBadge(delta)}</td>
+            <td style="padding:6px 8px;text-align:right;color:var(--muted)">${fmtN(m.units)}</td>
+            <td style="padding:6px 8px;text-align:center">${m.rating?`<span style="color:${m.rating>=4.7?'var(--green)':m.rating>=4.5?'var(--yellow)':'var(--red)'}">${(+m.rating).toFixed(1)}★</span>`:'—'}</td>
+            <td style="padding:6px 8px;text-align:center;color:var(--muted)">${m.reviews||0}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+  }catch(e){
+    const body=document.getElementById('sku-hist-body');
+    if(body)body.innerHTML=`<div style="color:var(--red);padding:20px">${e.message}</div>`;
+  }
+}
 function drillPrCard(i){
   const o=(window._prOpps||[])[i];
   if(!o)return;
@@ -2729,7 +2995,7 @@ async function drillDown(apiName, vetka, deptLabel, oppTitle, month, subtype, se
         <td style="padding:8px 10px;text-align:center"><span style="color:${revClr};font-weight:700">${r.reviews||0}</span></td>
         <td style="padding:8px 10px;text-align:center">${(r.rating||0)>0?`<span style="color:${r.rating>=4.7?'var(--green)':r.rating>=4.5?'var(--yellow)':'var(--red)'}">${(+r.rating).toFixed(1)}★</span>`:'—'}</td>
         <td style="padding:8px 10px;text-align:right;color:var(--muted);font-size:12px">${(r.rrc||0)>0?fmtR(r.rrc):'—'}</td>
-        <td style="padding:8px 10px">${kLink(r.name,r.brand,true,r.vetka,r.kod)}</td>
+        <td style="padding:8px 10px;white-space:nowrap">${kLink(r.name,r.brand,true,r.vetka,r.kod)}${historyBtn(r.kod,apiName,subtype)}</td>
       </tr>`;
     }
 
@@ -2809,6 +3075,16 @@ async function drillDown(apiName, vetka, deptLabel, oppTitle, month, subtype, se
 function _chip(text,color){
   return `<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:5px;background:${color}22;color:${color}">${text}</span>`;
 }
+// Safe single-quote escaping for values interpolated into inline onclick="..." strings.
+function _jsEsc(s){ return (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+// Small «История» button next to a product row — only shown when the row has
+// a Kaspi article kod (needed to look up sku-history reliably). Opens the
+// month-by-month view instead of dead-ending at the flat list (IA-аудит,
+// июль 2026 — Уровень 3 «Товар»).
+function historyBtn(kod, apiName, subtype){
+  if(!kod) return '';
+  return `<button onclick="event.stopPropagation();openSkuHistory({apiName:'${_jsEsc(apiName)}',kod:'${_jsEsc(kod)}',subtype:${subtype?`'${_jsEsc(subtype)}'`:'null'}})" title="История по месяцам" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);padding:2px 6px;cursor:pointer;font-size:11px;margin-left:4px;display:inline-flex;align-items:center;vertical-align:middle"><i class="ti ti-chart-line" style="font-size:11px"></i></button>`;
+}
 async function drillGeneric(cfg){
   const existing=document.getElementById('drill-modal');
   if(existing)existing.remove();
@@ -2843,12 +3119,7 @@ async function drillGeneric(cfg){
     if(cfg.abc)p.set('abc',cfg.abc);
     const data=await apig('/analytics/products?'+p.toString());
     const items=(data.items||[]).slice().sort((a,b)=>(b.revenue||0)-(a.revenue||0));
-    const ours=items.filter(r=>r.is_ours);
-    const comps=items.filter(r=>!r.is_ours);
     const maxRev=Math.max(...items.map(r=>r.revenue||0),1);
-
-    const subEl=document.getElementById('drill-sub');
-    if(subEl)subEl.textContent=`Всего товаров: ${items.length} · наших: ${ours.length} · ранжировано по выручке`;
 
     function thead(){
       return `<thead><tr style="border-bottom:1px solid var(--border)">
@@ -2876,19 +3147,69 @@ async function drillGeneric(cfg){
         <td style="padding:8px 10px;text-align:center"><span style="color:${revClr};font-weight:700">${r.reviews||0}</span></td>
         <td style="padding:8px 10px;text-align:center">${(r.rating||0)>0?`<span style="color:${r.rating>=4.7?'var(--green)':r.rating>=4.5?'var(--yellow)':'var(--red)'}">${(+r.rating).toFixed(1)}★</span>`:'—'}</td>
         <td style="padding:8px 10px;text-align:center"><span class="abc abc-${r.abc||'C'}">${r.abc||'—'}</span></td>
-        <td style="padding:8px 10px">${kLink(r.name,r.brand,true,r.vetka,r.kod)}</td>
+        <td style="padding:8px 10px;white-space:nowrap">${kLink(r.name,r.brand,true,r.vetka,r.kod)}${historyBtn(r.kod,cfg.apiName,cfg.subtype)}</td>
       </tr>`;
     }
 
-    document.getElementById('drill-body').innerHTML=`
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--ice);margin-bottom:8px"><i class="ti ti-star-filled" style="font-size:11px"></i> Наши товары (${ours.length})</div>
-      ${ours.length
-        ?`<div class="tw" style="margin-bottom:20px"><table style="width:100%">${thead()}<tbody>${ours.map(r=>row(r,true)).join('')}</tbody></table></div>`
-        :`<div style="padding:12px 0 20px;color:var(--muted);font-size:12px">Нет наших товаров${cfg.vetka?' в этом сегменте':cfg.brand?' у этого бренда':cfg.abc?' в этой категории':''}</div>`}
-      ${comps.length?`
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:8px"><i class="ti ti-users" style="font-size:11px"></i> Конкуренты (${comps.length})</div>
-        <div class="tw"><table style="width:100%">${thead()}<tbody>${comps.slice(0,60).map(r=>row(r,false)).join('')}${comps.length>60?`<tr><td colspan="7" style="text-align:center;padding:10px;color:var(--muted);font-size:11px">…и ещё ${comps.length-60}</td></tr>`:''}</tbody></table></div>`:''}
-      ${!ours.length&&!comps.length?'<div style="text-align:center;padding:40px;color:var(--muted)">Нет данных</div>':''}`;
+    // IA-аудит июль 2026, Фаза 3: «Ветки → Бренды → Товары» без потери контекста —
+    // считаем рядом с уже загруженным списком товаров рейтинг по «другому»
+    // измерению (бренды, если открыли из сегмента; сегменты, если открыли из
+    // бренда) прямо на клиенте, без нового запроса, и даём кликом отфильтровать
+    // тот же список товаров ниже. Обе стороны (Ветки-строка и Бренды-строка)
+    // используют один и тот же drillGeneric(), так что переключение работает
+    // одинаково в обе стороны.
+    function rollupBy(getKey){
+      const acc=new Map();
+      for(const r of items){
+        const k=getKey(r)||'—';
+        if(!acc.has(k))acc.set(k,{label:k,revenue:0,count:0,ours:0});
+        const e=acc.get(k); e.revenue+=r.revenue||0; e.count++; if(r.is_ours)e.ours++;
+      }
+      return [...acc.values()].sort((a,b)=>b.revenue-a.revenue);
+    }
+    const brandRollup = !cfg.brand ? rollupBy(r=>r.brand) : null;
+    const vetkaRollup  = !cfg.vetka && items.some(r=>r.vetka) ? rollupBy(r=>r.vetka) : null;
+
+    function rollupChips(list, kind, activeVal){
+      if(!list || list.length<2) return '';
+      const totalRev=list.reduce((s,x)=>s+x.revenue,0)||1;
+      const label=kind==='brand'?'Бренды':'Сегменты';
+      return `<div style="margin-bottom:14px">
+        <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:6px">${label} в этой выборке ${activeVal?'':'— нажмите, чтобы отфильтровать товары ниже'}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${activeVal?`<button onclick="_dgPaint(null)" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;border:1px solid var(--red);background:none;color:var(--red);cursor:pointer">× сбросить фильтр «${escHtml(activeVal)}»</button>`:''}
+          ${list.slice(0,12).map(x=>{
+            const active=activeVal===x.label;
+            if(activeVal && !active) return '';
+            const pct=(x.revenue/totalRev*100).toFixed(0);
+            return `<button onclick="_dgPaint('${kind}','${_jsEsc(x.label)}')" style="font-size:11px;font-weight:${active?'700':'600'};padding:4px 10px;border-radius:20px;border:1px solid ${active?'var(--ice)':'var(--border)'};background:${active?'rgba(96,184,212,.15)':'none'};color:${active?'var(--ice)':'var(--text)'};cursor:pointer">${escHtml(x.label)}${x.ours?' ⭐':''} · ${pct}%</button>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }
+
+    function paint(pivot){
+      const filtered = pivot ? items.filter(r=>(pivot.kind==='brand'?(r.brand||'—'):(r.vetka||'—'))===pivot.value) : items;
+      const ours=filtered.filter(r=>r.is_ours);
+      const comps=filtered.filter(r=>!r.is_ours);
+      const subEl=document.getElementById('drill-sub');
+      if(subEl)subEl.textContent=`Всего товаров: ${filtered.length} · наших: ${ours.length} · ранжировано по выручке${pivot?` · фильтр: ${pivot.value}`:''}`;
+      const body=document.getElementById('drill-body');
+      if(!body)return;
+      body.innerHTML=`
+        ${rollupChips(brandRollup,'brand',pivot&&pivot.kind==='brand'?pivot.value:null)}
+        ${rollupChips(vetkaRollup,'vetka',pivot&&pivot.kind==='vetka'?pivot.value:null)}
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--ice);margin-bottom:8px"><i class="ti ti-star-filled" style="font-size:11px"></i> Наши товары (${ours.length})</div>
+        ${ours.length
+          ?`<div class="tw" style="margin-bottom:20px"><table style="width:100%">${thead()}<tbody>${ours.map(r=>row(r,true)).join('')}</tbody></table></div>`
+          :`<div style="padding:12px 0 20px;color:var(--muted);font-size:12px">Нет наших товаров${cfg.vetka?' в этом сегменте':cfg.brand?' у этого бренда':cfg.abc?' в этой категории':''}</div>`}
+        ${comps.length?`
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:8px"><i class="ti ti-users" style="font-size:11px"></i> Конкуренты (${comps.length})</div>
+          <div class="tw"><table style="width:100%">${thead()}<tbody>${comps.slice(0,60).map(r=>row(r,false)).join('')}${comps.length>60?`<tr><td colspan="7" style="text-align:center;padding:10px;color:var(--muted);font-size:11px">…и ещё ${comps.length-60}</td></tr>`:''}</tbody></table></div>`:''}
+        ${!ours.length&&!comps.length?'<div style="text-align:center;padding:40px;color:var(--muted)">Нет данных</div>':''}`;
+    }
+    window._dgPaint=(kind,val)=>paint(kind?{kind,value:val}:null);
+    paint(null);
   }catch(e){
     const body=document.getElementById('drill-body');
     if(body)body.innerHTML=`<div style="color:var(--red);padding:20px">${e.message}</div>`;
@@ -3973,30 +4294,11 @@ async function renderTactics(){
         </div>`;
     }
 
-    // ── SCORE (0–100) — ТАК-02: сохраняем breakdown для отображения ──
-    let score=0;
-    const _s1=ourShare>=25?25:ourShare>=15?18:ourShare>=8?11:ourShare>=3?5:2; score+=_s1;
-    const abcAShare=ourSku>0?ourAbcA/ourSku:0;
-    const _s2=abcAShare>=0.5?15:abcAShare>=0.3?10:abcAShare>=0.1?6:ourAbcA>0?3:0; score+=_s2;
-    const _s3=ourRating>=4.8?15:ourRating>=4.7?11:ourRating>=4.5?7:ourRating>=4.0?3:0; score+=_s3;
-    const _s4=vetkaTotal>0?Math.round((vetkaWithUs.length/vetkaTotal)*20):0; score+=_s4;
-    // review score: penalise if many SKUs without reviews
-    const reviewCoverage=ourSku>0?Math.max(0,1-(noReviews.length+fewReviews.length*0.5)/ourSku):1;
-    const _s5=Math.round(reviewCoverage*15); score+=_s5;
-    score=Math.min(100,score);
-    // ТАК-02: breakdown для tc-score блока
-    const _scoreBreakdown=[
-      {label:'Доля рынка',pts:_s1,max:25,hint:`${ourShare.toFixed(1)}%`},
-      {label:'ABC-A товары',pts:_s2,max:15,hint:`${(abcAShare*100).toFixed(0)}% SKU`},
-      {label:'Рейтинг',pts:_s3,max:15,hint:`${ourRating.toFixed(2)}★`},
-      {label:'Покрытие веток',pts:_s4,max:20,hint:`${vetkaWithUs.length}/${vetkaTotal}`},
-      {label:'Отзывы',pts:_s5,max:15,hint:`${Math.round(reviewCoverage*100)}%`},
-    ];
-
-    const scoreColor=score>=70?'var(--green)':score>=40?'var(--yellow)':'var(--red)';
-    const scoreLabel=score>=70?'Сильная позиция':score>=40?'Есть потенциал':'Критично — нужны действия';
-    const statusClass=score>=70?'good':score>=40?'warn':'danger';
-    const statusIcon=score>=70?'ti-circle-check':score>=40?'ti-alert-triangle':'ti-alert-circle';
+    // ── SCORE (0–100) — общая формула, см. computeDeptScore() (используется
+    //    также для статус-бейджей ОК/Внимание/Критично на стартовом экране). ──
+    const _sc=computeDeptScore(ov, vetka, st);
+    const score=_sc.score, _scoreBreakdown=_sc.breakdown, scoreColor=_sc.color,
+          scoreLabel=_sc.label, statusClass=_sc.statusClass, statusIcon=_sc.statusIcon;
 
     // ── TACTICS HERO — big score gauge instead of a text-only banner.
     // This is the page's signature visual: the one number that answers

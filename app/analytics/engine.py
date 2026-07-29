@@ -1455,3 +1455,159 @@ def calc_rrc_analytics(rows: list[dict], our_brands: set[str]) -> dict:
             "above_market": above,
         },
     }
+
+
+# ── IA redesign (audit, июль 2026): "diagnostic funnel" support ───────────────
+# Level 1 "Пульс отдела" needs a ranked answer to "why did OUR revenue change",
+# not just the total delta (that already exists as calc_monthly's mom_our_pct).
+# This walks the same latest-vs-previous-month comparison down to the
+# segment/brand/product level so the biggest contributors are visible without
+# manually cross-referencing Ветки and Бренды by hand.
+
+def calc_whats_changed(rows: list[dict], our_brands: set[str], top_n: int = 6) -> dict:
+    """
+    Rank the segments, brands and products that contributed most to the
+    change in OUR revenue between the latest month present in `rows` and the
+    one immediately before it (chronologically, not just "last uploaded").
+
+    Returns {"month": latest, "prev_month": prev, "factors": [...]} where each
+    factor is {type: 'сегмент'|'бренд'|'товар', label, current, previous,
+    delta, delta_pct, vetka, brand, kod, name} — sorted by |delta| desc.
+    If fewer than 2 months of data exist, returns {"factors": []} (nothing to
+    compare yet — this is expected for a department's first month of data).
+    """
+    months = sorted({r["month"] for r in rows if r["month"]}, key=_month_sort_key)
+    if len(months) < 2:
+        return {"month": months[-1] if months else None, "prev_month": None, "factors": []}
+
+    latest, prev = months[-1], months[-2]
+
+    def _grouped_delta(key_fn) -> dict[str, dict]:
+        """group→{'current':x,'previous':y} of OUR revenue for the two months."""
+        acc: dict[str, dict] = defaultdict(lambda: {"current": 0.0, "previous": 0.0})
+        for r in rows:
+            if (r["brand"] or "").upper() not in our_brands:
+                continue
+            m = r["month"]
+            if m not in (latest, prev):
+                continue
+            k = key_fn(r)
+            if k is None:
+                continue
+            acc[k]["current" if m == latest else "previous"] += r["revenue"] or 0
+        return acc
+
+    def _to_factors(acc: dict[str, dict], ftype: str, extra_fn) -> list[dict]:
+        out = []
+        for k, d in acc.items():
+            delta = d["current"] - d["previous"]
+            if abs(delta) < 1:
+                continue
+            out.append({
+                "type": ftype,
+                "label": k,
+                "current": round(d["current"], 2),
+                "previous": round(d["previous"], 2),
+                "delta": round(delta, 2),
+                "delta_pct": round(safe_div(delta, d["previous"]) * 100, 1) if d["previous"] else None,
+                **extra_fn(k),
+            })
+        return out
+
+    seg_acc = _grouped_delta(lambda r: r["vetka"] or None)
+    brand_acc = _grouped_delta(lambda r: r["brand"] or None)
+
+    # Products need one representative row (for kod/name/vetka/brand) alongside
+    # the aggregated delta — track the highest-revenue row seen per sku_key.
+    sku_acc: dict[str, dict] = defaultdict(lambda: {"current": 0.0, "previous": 0.0, "rep": None})
+    for r in rows:
+        if (r["brand"] or "").upper() not in our_brands:
+            continue
+        m = r["month"]
+        if m not in (latest, prev):
+            continue
+        k = sku_key(r)
+        d = sku_acc[k]
+        d["current" if m == latest else "previous"] += r["revenue"] or 0
+        if d["rep"] is None or (r["revenue"] or 0) > (d["rep"]["revenue"] or 0):
+            d["rep"] = r
+
+    factors = []
+    factors += _to_factors(seg_acc, "сегмент", lambda k: {"vetka": k, "brand": None, "kod": None, "name": None})
+    factors += _to_factors(brand_acc, "бренд", lambda k: {"vetka": None, "brand": k, "kod": None, "name": None})
+    for k, d in sku_acc.items():
+        delta = d["current"] - d["previous"]
+        if abs(delta) < 1:
+            continue
+        rep = d["rep"] or {}
+        factors.append({
+            "type": "товар",
+            "label": rep.get("name") or rep.get("brand") or k,
+            "current": round(d["current"], 2),
+            "previous": round(d["previous"], 2),
+            "delta": round(delta, 2),
+            "delta_pct": round(safe_div(delta, d["previous"]) * 100, 1) if d["previous"] else None,
+            "vetka": rep.get("vetka"), "brand": rep.get("brand"),
+            "kod": rep.get("kod"), "name": rep.get("name"),
+        })
+
+    factors.sort(key=lambda f: -abs(f["delta"]))
+    return {"month": latest, "prev_month": prev, "factors": factors[:top_n]}
+
+
+def calc_sku_history(rows: list[dict], kod: str = "", name: str = "") -> dict:
+    """
+    Month-by-month history for ONE product, identified by kod (preferred) or
+    exact name. Used by the product drill-down modal so a single SKU can be
+    inspected further instead of dead-ending at a flat list (IA audit, июль
+    2026 — Часть IV, Уровень 3 "Товар").
+
+    Returns {"kod","name","brand","months":[{month,revenue,units,rrc,
+    rating,reviews}...]} sorted chronologically, or {"months":[]} if the
+    product can't be found in `rows`.
+    """
+    kod = (kod or "").strip()
+    name = (name or "").strip()
+    matches = [
+        r for r in rows
+        if (kod and (r.get("kod") or "").strip() == kod)
+        or (not kod and name and (r.get("name") or "").strip().upper() == name.upper())
+    ]
+    if not matches:
+        return {"kod": kod, "name": name, "brand": None, "months": []}
+
+    by_month: dict[str, dict] = defaultdict(lambda: {"revenue": 0.0, "units": 0.0, "rrc": [], "rating": [], "reviews": 0.0})
+    rep = matches[0]
+    for r in matches:
+        m = r["month"] or "—"
+        d = by_month[m]
+        d["revenue"] += r["revenue"] or 0
+        d["units"] += r["units"] or 0
+        if r.get("rrc"):
+            d["rrc"].append(r["rrc"])
+        if r.get("rating"):
+            d["rating"].append(r["rating"])
+        d["reviews"] = max(d["reviews"], r["reviews"] or 0)
+        if (r["revenue"] or 0) > (rep["revenue"] or 0):
+            rep = r
+
+    months_sorted = sorted(by_month, key=_month_sort_key)
+    series = []
+    for m in months_sorted:
+        d = by_month[m]
+        series.append({
+            "month": m,
+            "revenue": round(d["revenue"], 2),
+            "units": round(d["units"]),
+            "rrc": round(sum(d["rrc"]) / len(d["rrc"]), 0) if d["rrc"] else None,
+            "rating": round(sum(d["rating"]) / len(d["rating"]), 2) if d["rating"] else None,
+            "reviews": round(d["reviews"]),
+        })
+
+    return {
+        "kod": rep.get("kod") or kod,
+        "name": rep.get("name") or name,
+        "brand": rep.get("brand"),
+        "vetka": rep.get("vetka"),
+        "months": series,
+    }
