@@ -114,7 +114,21 @@ async def rate_limit_middleware(request: Request, call_next):
 
     response = await call_next(request)
 
-    if response.status_code == 401:
+    # Only count a 401 as a "failed login attempt" if the request actually
+    # PRESENTED credentials that turned out to be wrong (set by
+    # basic_auth_middleware below via request.state.auth_attempted). A bare
+    # 401 with no Authorization header at all is just the normal first touch
+    # of a fresh browser session — every new tab/reload/device does this
+    # once before the browser's native login prompt even appears, since the
+    # browser doesn't know to send credentials until it's been challenged.
+    # Counting THAT as a failed attempt meant a handful of routine reloads
+    # (exactly what happens during any troubleshooting session) could push
+    # the shared-IP counter over _AUTH_FAIL_MAX and lock the whole site out
+    # for 10 minutes — which then looks like "infinite re-authorization"
+    # from the user's side, because every retry during the lockout window
+    # also comes back 429 and resets nothing. This was the real bug behind
+    # the recurring "бесконечная авторизация" reports.
+    if response.status_code == 401 and getattr(request.state, "auth_attempted", False):
         _auth_fail_hits[ip].append(time.time())
 
     return response
@@ -165,6 +179,11 @@ async def basic_auth_middleware(request: Request, call_next):
 
     auth_header = request.headers.get("Authorization", "")
     if auth_header.lower().startswith("basic "):
+        # Real credentials were presented (right or wrong) — a 401 from here
+        # on is a genuine failed login attempt, not just "not logged in yet".
+        # rate_limit_middleware (outer layer) reads this to decide whether
+        # the eventual 401 should count toward the brute-force lockout.
+        request.state.auth_attempted = True
         try:
             decoded = base64.b64decode(auth_header.split(" ", 1)[1]).decode("utf-8")
             username, _, password = decoded.partition(":")
