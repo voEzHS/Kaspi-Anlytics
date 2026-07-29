@@ -376,7 +376,11 @@ async def upload_file(
     department: str = Form(...),   # "freezers" | "refrigerated" | "ovens" | "ice_makers"
     month: Optional[str] = Form(None),   # override month for all rows
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_admin),
+    # 29.07: пароль на саму загрузку убран по прямому запросу — front-door
+    # Basic Auth на POST /uploads/ надёжно ловил баг с зацикливающимся
+    # окном логина браузера (см. main.py basic_auth_middleware). Остальные
+    # админ-действия (удаление, правка Тип, настройки, AI-отчёт) по-прежнему
+    # требуют пароль через require_admin — тронут только сам аплоад.
 ):
     if department not in DeptEnum.__members__:
         raise HTTPException(400, f"Unknown department: {department}")

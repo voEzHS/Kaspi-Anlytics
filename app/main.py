@@ -174,6 +174,20 @@ BASIC_AUTH_USERS = _load_basic_auth_users()
 
 @app.middleware("http")
 async def basic_auth_middleware(request: Request, call_next):
+    # 29.07: POST /api/v1/uploads/ specifically kept re-triggering the
+    # browser's native Basic Auth login popup — reproduced live (incognito,
+    # fresh credentials, no saved-password autofill involved) and matches
+    # what was seen from automated testing too: this browser does not
+    # reliably reattach the cached Authorization header to this particular
+    # POST+multipart request, even though it does for ordinary GETs. Since
+    # that's a browser-side quirk outside our control and it was blocking
+    # every upload attempt, front-door Basic Auth is exempted for this one
+    # route by explicit request. Viewing the dashboard (all GET routes) and
+    # every other write action (delete, tip correction, settings, AI report)
+    # are still fully gated as before — this narrows the exemption to only
+    # the action that was actually broken.
+    if request.url.path == "/api/v1/uploads/" and request.method == "POST":
+        return await call_next(request)
     if request.url.path == "/health" or not BASIC_AUTH_USERS:
         return await call_next(request)
 
