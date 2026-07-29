@@ -91,6 +91,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 
 /* ── SIDEBAR ─────────────────────────────────────────────────────────── */
 .sb{width:var(--sw);background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+/* UX-структурный редизайн 29.07: .sb-row1 группирует лого+отдел+служебное
+   только на десктопе (см. media-запрос ниже). На мобильном/off-canvas
+   drawer'е она не нужна как контейнер — display:contents убирает её саму,
+   но сохраняет её детей как обычных flex-детей .sb, и order расставляет их
+   в исходном порядке (лого, отдел, разделы аналитики, потом служебное). */
+.sb-row1{display:contents}
+.nav-sec{order:2}
+.nav-bottom{order:3}
 .sb-logo{padding:18px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
 .logo-ic{width:36px;height:36px;background:linear-gradient(135deg,rgba(96,184,212,.2),rgba(96,184,212,.05));border:1px solid rgba(96,184,212,.4);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--ice);font-size:18px;flex-shrink:0}
 .logo-t{font-size:14px;font-weight:700;letter-spacing:-.3px}.logo-s{font-size:11px;color:var(--muted);margin-top:1px}
@@ -128,31 +136,49 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 
 .sub-sec{display:none!important}
 
-/* ── TOP NAV (desktop) — horizontal bar replaces the left sidebar.
+/* ── TOP NAV (desktop) — horizontal bars replace the left sidebar.
    Mobile (<=768px) keeps the existing off-canvas drawer behaviour below,
-   this block only applies above that breakpoint so nothing on mobile changes. ── */
+   this block only applies above that breakpoint so nothing on mobile changes.
+
+   UX-структурный редизайн 29.07 (фидбек по скриншоту продакшна): раньше
+   .dept-sec (отдел) и .nav-sec (раздел аналитики) были flex-соседями В ОДНОЙ
+   строке .sb — обе рисовались похожими пилюлями, и не читалось, что это два
+   разных по смыслу выбора («какое оборудование» vs «какой экран»). Теперь
+   .sb — flex-column из двух строк: .sb-row1 (лого + отдел + служебное) и
+   .nav-sec отдельной строкой ниже, с другим визуальным языком — подчёркивание
+   вместо заливки, чтобы не путаться с пилюлями отдела над ней. ── */
 @media(min-width:769px){
   .layout{flex-direction:column}
-  .sb{width:100%;height:56px;border-right:none;border-bottom:1px solid var(--border);flex-direction:row;align-items:center;overflow:visible;padding:0 16px;gap:16px}
+  .sb{width:100%;height:auto;border-right:none;border-bottom:none;flex-direction:column;align-items:stretch;overflow:visible;padding:0}
+  .sb-row1{display:flex;align-items:center;gap:16px;padding:0 16px;height:52px;border-bottom:1px solid var(--border)}
   .sb-logo{padding:0;border-bottom:none;flex-shrink:0}
   .sb-logo .logo-s,.sb-logo .api-st{display:none} /* keep just the wordmark — status dot moves to topbar */
-  .dept-sec{padding:0;border-bottom:none;display:flex;align-items:center;gap:6px;flex-shrink:0}
+  .dept-sec{padding:0;border-bottom:none;display:flex;align-items:center;gap:6px;flex:1;min-width:0}
   .dept-sec .sl{display:none}
   .db{margin-bottom:0;width:auto;padding:6px 10px;font-size:12px;white-space:nowrap}
   .dept-sec .dc{display:none} /* month-count badge — not needed in the compact top bar */
-  .nav-sec{padding:0;flex:1;display:flex;align-items:center;gap:1px;overflow-x:auto;min-width:0;scrollbar-width:thin}
-  .nav-sec .sl{display:none}
-  .nb{width:auto;margin-bottom:0;white-space:nowrap;padding:8px 10px;font-size:12.5px}
   .nav-bottom{padding:0;border-top:none;display:flex;align-items:center;gap:2px;flex-shrink:0}
   .nav-bottom .sl{display:none}
   .nav-bottom .nb-label{display:none} /* icon-only: Загрузка/Настройки used less often, saves room for main nav */
   .nav-bottom .nb{padding:8px}
   .last-upd{display:none!important}
   .content{max-width:1520px}
+
+  /* Строка 2 — разделы аналитики, стиль табов (не пилюль отдела выше) */
+  .nav-sec{padding:0 16px;flex:0 0 auto;display:flex;align-items:center;gap:2px;overflow-x:auto;min-width:0;scrollbar-width:thin;background:var(--s1);border-bottom:1px solid var(--border)}
+  .nav-sec .sl{display:none}
+  .nav-sec .nb{width:auto;margin-bottom:0;white-space:nowrap;padding:12px 14px;font-size:13px;border-radius:0;border-bottom:2px solid transparent;background:transparent!important;color:var(--muted)}
+  .nav-sec .nb:hover{color:var(--text);border-bottom-color:var(--border)}
+  .nav-sec .nb.active{background:transparent!important;color:var(--text)!important;font-weight:700;border-bottom-color:var(--ice)}
+  /* Отменяем старое «белая иконка на заливке» (было для сплошной цветной
+     пилюли) — активная иконка теперь просто того же нейтрального цвета,
+     что и текст таба, вместо форсированного белого поверх залитого фона. */
+  .nav-sec .nb.active i.nav-ic{background:transparent!important;color:var(--text)!important}
 }
 @media(min-width:769px) and (max-width:1300px){
-  .nb{padding:7px 8px;font-size:12px}
-  .nb i{font-size:15px}
+  .nav-sec .nb{padding:11px 10px;font-size:12px}
+  .nav-sec .nb i{font-size:15px}
+  .db{padding:6px 8px;font-size:11.5px}
 }
 
 /* ── TYPE TAB BAR ──────────────────────────────────────────────────── */
@@ -630,22 +656,38 @@ textarea.inp::placeholder{color:var(--muted)}
 
 <div class="layout" id="app-layout" style="display:none">
 <aside class="sb">
-  <div class="sb-logo" onclick="goHome()" style="cursor:pointer" title="На главную — выбрать отдел">
-    <div class="logo-ic"><i class="ti ti-chart-bar"></i></div>
-    <div>
-      <div class="logo-t">Kaspi Analytics</div>
-      <div class="logo-s">TorgStore</div>
-      <div class="api-st"><span class="dot-st" id="api-dot"></span><span id="api-lbl">подключение...</span></div>
+  <!-- UX-структурный редизайн 29.07 (фидбек по скриншоту продакшна): раньше
+       отдел (Морозильники/...) и раздел (Обзор/Каталог/...) стояли в ОДНОЙ
+       горизонтальной строке одинаковыми пилюлями — первый раз заходящему
+       человеку не видно разницы между «какое оборудование» и «какой экран
+       аналитики», это два разных по смыслу выбора. Теперь это два визуально
+       разных ряда: sb-row1 — контекст (лого + отдел + служебное), ниже —
+       nav-sec как отдельная строка табов (подчёркивание вместо пилюль). -->
+  <div class="sb-row1">
+    <div class="sb-logo" onclick="goHome()" style="cursor:pointer" title="На главную — выбрать отдел">
+      <div class="logo-ic"><i class="ti ti-chart-bar"></i></div>
+      <div>
+        <div class="logo-t">Kaspi Analytics</div>
+        <div class="logo-s">TorgStore</div>
+        <div class="api-st"><span class="dot-st" id="api-dot"></span><span id="api-lbl">подключение...</span></div>
+      </div>
     </div>
-  </div>
 
-  <div class="dept-sec">
-    <div class="sl">Отдел</div>
-    <div class="dept-indicator" id="dept-indicator"></div>
-    <button class="db af" id="btn-f" onclick="setDept('frz')"><span class="dd dd-f"></span>Морозильники<span class="dc" id="cnt-f">—</span></button>
-    <button class="db" id="btn-r" onclick="setDept('ref')"><span class="dd dd-r"></span>Холод. витрины<span class="dc" id="cnt-r">—</span></button>
-    <button class="db" id="btn-o" onclick="setDept('ovn')"><span class="dd dd-o"></span>Жарочные шкафы<span class="dc" id="cnt-o">—</span></button>
-    <button class="db" id="btn-i" onclick="setDept('icg')"><span class="dd dd-i"></span>Льдогенераторы<span class="dc" id="cnt-i">—</span></button>
+    <div class="dept-sec">
+      <div class="sl">Отдел</div>
+      <div class="dept-indicator" id="dept-indicator"></div>
+      <button class="db af" id="btn-f" onclick="setDept('frz')"><span class="dd dd-f"></span>Морозильники<span class="dc" id="cnt-f">—</span></button>
+      <button class="db" id="btn-r" onclick="setDept('ref')"><span class="dd dd-r"></span>Холод. витрины<span class="dc" id="cnt-r">—</span></button>
+      <button class="db" id="btn-o" onclick="setDept('ovn')"><span class="dd dd-o"></span>Жарочные шкафы<span class="dc" id="cnt-o">—</span></button>
+      <button class="db" id="btn-i" onclick="setDept('icg')"><span class="dd dd-i"></span>Льдогенераторы<span class="dc" id="cnt-i">—</span></button>
+    </div>
+
+    <div class="nav-bottom">
+      <div class="sl">Система</div>
+      <button class="nb" data-p="upload" onclick="showPage('upload')" title="Загрузка данных"><i class="ti ti-upload"></i><span class="nb-label">Загрузка данных</span></button>
+      <button class="nb" data-p="settings" onclick="showPage('settings')" title="Настройки"><i class="ti ti-settings"></i><span class="nb-label">Настройки</span></button>
+      <div class="last-upd" id="last-upd" style="display:none"><i class="ti ti-refresh"></i><span id="last-upd-txt"></span></div>
+    </div>
   </div>
 
   <div class="nav-sec">
@@ -657,13 +699,6 @@ textarea.inp::placeholder{color:var(--muted)}
     <button class="nb" data-p="catalog" onclick="showPage('catalog')"><i class="ti ti-building-store nav-ic" style="color:var(--purple);background:rgba(163,113,247,.14)"></i>Каталог</button>
     <button class="nb" data-p="trends" onclick="showPage('trends')"><i class="ti ti-chart-line nav-ic" style="color:var(--green);background:rgba(63,185,80,.14)"></i>Тренды</button>
     <button class="nb" data-p="priority" onclick="showPage('priority')"><i class="ti ti-cash nav-ic" style="color:var(--green);background:rgba(63,185,80,.14)"></i>Приоритеты</button>
-  </div>
-
-  <div class="nav-bottom">
-    <div class="sl">Система</div>
-    <button class="nb" data-p="upload" onclick="showPage('upload')" title="Загрузка данных"><i class="ti ti-upload"></i><span class="nb-label">Загрузка данных</span></button>
-    <button class="nb" data-p="settings" onclick="showPage('settings')" title="Настройки"><i class="ti ti-settings"></i><span class="nb-label">Настройки</span></button>
-    <div class="last-upd" id="last-upd" style="display:none"><i class="ti ti-refresh"></i><span id="last-upd-txt"></span></div>
   </div>
 
   <!-- chips hidden; kept for JS compat — rebuildChips() writes here but it's invisible -->
