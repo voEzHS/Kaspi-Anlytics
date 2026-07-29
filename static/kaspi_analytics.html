@@ -2487,12 +2487,18 @@ function showConfirm(title, msg, onOk){
 
 async function delUp(id){
   showConfirm('Удалить загрузку?','Все данные из этой загрузки будут удалены без возможности восстановления.',
-    ()=>showAdminModal(()=>_doDelete(id)));
+    ()=>_doDelete(id));
 }
 async function _doDelete(id){
   try{
     const r=await fetch(API+'/uploads/'+id,{method:'DELETE',headers:{'x-admin-token':_adminToken||''}});
-    if(r.status===403){_adminToken=null;sessionStorage.removeItem('_kaspiAdmAuth');toast('Неверный пароль','error');return;}
+    if(r.status===403){
+      // Not recognized as admin yet — ask once via the modal and retry,
+      // rather than dead-ending with an error toast (see _doUpload).
+      _adminToken=null;sessionStorage.removeItem('_kaspiAdmAuth');
+      showAdminModal(()=>_doDelete(id));
+      return;
+    }
     if(!r.ok)throw new Error(await r.text());
     toast('Загрузка удалена','success');
     loadCounts();loadMonths();loadSubtypes();renderUpload();
@@ -2507,7 +2513,11 @@ function handleDrop(e){
 function handleFile(file){
   if(!file)return;
   if(!file.name.match(/\.xlsx$/i)){toast('Нужен файл формата .xlsx (не .xls)','error');return;}
-  showAdminModal(()=>_doUpload(file));
+  // Try the upload directly — an already-logged-in admin (Basic Auth at the
+  // front door) is recognized automatically server-side (see
+  // require_admin in uploads.py) and never needs the in-app password modal
+  // at all. The modal only appears as a fallback if that check fails.
+  _doUpload(file);
 }
 
 async function _doUpload(file){
@@ -2526,7 +2536,14 @@ async function _doUpload(file){
     const tid=setTimeout(()=>ctrl.abort(),60000);
     const r=await fetch(API+'/uploads/',{method:'POST',body:form,signal:ctrl.signal,headers:{'x-admin-token':_adminToken||''}});
     clearTimeout(tid);
-    if(r.status===403){_adminToken=null;sessionStorage.removeItem('_kaspiAdmAuth');toast('Неверный пароль','error');return;}
+    if(r.status===403){
+      // Not recognized as admin yet — ask once via the modal and retry
+      // with the SAME file, instead of dropping it and showing a dead-end
+      // "Неверный пароль" toast (that loop is the bug being fixed here).
+      _adminToken=null;sessionStorage.removeItem('_kaspiAdmAuth');
+      showAdminModal(()=>_doUpload(file));
+      return;
+    }
     if(!r.ok){const t=await r.text();throw new Error(t);}
     const data=await r.json();
     const monthsStr = (data.months||[]).join(', ') || month || '';
@@ -4492,12 +4509,6 @@ async function genAI(ctx){
   const btn=g(btnId);const box=g(boxId);
   if(!btn||!box)return;
 
-  // AI requires admin auth — ensure token is present before sending
-  if(!_adminToken){
-    showAdminModal(()=>genAI(ctx));
-    return;
-  }
-
   const vetka = (g(vetkaSelId)||{}).value || '';
   const query = ((g(queryId)||{}).value || '').trim();
   const cacheKey = `ai_${DA[A.dept]}_${A.month||'all'}_${A.sub||''}_${vetka}_${query.slice(0,60)}`;
@@ -4508,10 +4519,18 @@ async function genAI(ctx){
     if(A.month)p.set('month',A.month);if(A.sub)p.set('subtype',A.sub);if(vetka)p.set('vetka',vetka);
     const r=await fetch(API+'/ai/report?'+p,{
       method:'POST',
-      headers:{'x-admin-token':_adminToken,'Content-Type':'application/json'},
+      headers:{'x-admin-token':_adminToken||'','Content-Type':'application/json'},
       body: JSON.stringify({user_query: query || null})
     });
-    if(r.status===403){_adminToken=null;sessionStorage.removeItem('_kaspiAdmAuth');toast('Сессия истекла — войдите снова','error');btn.disabled=false;btn.innerHTML=doneLabel;return;}
+    if(r.status===403){
+      // Not recognized as admin (neither the front-door Basic Auth session
+      // nor a cached in-app token). Ask once via the modal and retry —
+      // don't just dead-end with an error toast.
+      _adminToken=null;sessionStorage.removeItem('_kaspiAdmAuth');
+      btn.disabled=false;btn.innerHTML=doneLabel;
+      showAdminModal(()=>genAI(ctx));
+      return;
+    }
     if(!r.ok) throw new Error(await r.text());
     const d=await r.json();
     box.innerHTML = renderAIStrategy(d) +

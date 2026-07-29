@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import openpyxl
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,12 +17,27 @@ from app.analytics.tip_classifier import classify_rows
 router = APIRouter(prefix="/api/v1/uploads", tags=["uploads"])
 
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+# Must match main.py's default — used only to recognize the admin account
+# that already passed the front-door Basic Auth check (see require_admin).
+BASIC_AUTH_USER = os.getenv("BASIC_AUTH_USER", "torgstore")
 
 
-async def require_admin(x_admin_token: Optional[str] = Header(None)):
-    """Allow write operations only if correct admin token is provided."""
+async def require_admin(request: Request, x_admin_token: Optional[str] = Header(None)):
+    """Allow write operations only if the caller is the admin.
+
+    Two independent ways to prove that:
+      1. The in-app x-admin-token header matches ADMIN_PASSWORD (the
+         password modal in the UI).
+      2. The request already passed the front-door Basic Auth middleware
+         AS the admin account (BASIC_AUTH_USER). basic_auth_middleware
+         stashes this on request.state before the route ever runs, so a
+         logged-in admin never has to re-type the same password into a
+         second, separate prompt just to upload or delete data.
+    """
     if not ADMIN_PASSWORD:
         return  # No password set — open access (dev mode)
+    if getattr(request.state, "basic_auth_user", None) == BASIC_AUTH_USER:
+        return
     if x_admin_token != ADMIN_PASSWORD:
         raise HTTPException(403, "Неверный пароль администратора")
 
@@ -329,9 +344,11 @@ async def preview_parse(file: UploadFile = File(...)):
 
 
 @router.get("/auth-check", summary="Verify admin password")
-async def auth_check(x_admin_token: Optional[str] = Header(None)):
-    """Returns 200 if password is correct, 403 if not."""
+async def auth_check(request: Request, x_admin_token: Optional[str] = Header(None)):
+    """Returns 200 if password is correct (or already admin via Basic Auth), 403 if not."""
     if not ADMIN_PASSWORD:
+        return {"ok": True}
+    if getattr(request.state, "basic_auth_user", None) == BASIC_AUTH_USER:
         return {"ok": True}
     if x_admin_token != ADMIN_PASSWORD:
         raise HTTPException(403, "Неверный пароль")

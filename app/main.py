@@ -170,6 +170,10 @@ async def basic_auth_middleware(request: Request, call_next):
             username, _, password = decoded.partition(":")
             expected = BASIC_AUTH_USERS.get(username)
             if expected is not None and hmac.compare_digest(password, expected):
+                # Stash who passed the front door so require_admin() downstream
+                # can recognize the admin account without asking for the same
+                # password a second time via the in-app x-admin-token modal.
+                request.state.basic_auth_user = username
                 return await call_next(request)
         except Exception:
             pass
