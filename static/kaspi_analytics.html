@@ -257,6 +257,15 @@ input.inp::placeholder{color:var(--muted)}
 .tw{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{padding:10px 12px;text-align:left;color:var(--muted);font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0;background:var(--s1);z-index:1}
+/* UX-аудит 29.07: в таблицах с 10+ колонками (Ветки, Бренды, План захвата)
+   все колонки были одного визуального веса — ничего не подсказывало порядок
+   просмотра. .th-key выделяет 2-3 самые решающие колонки в каждой таблице;
+   col-hide-md (уже используется для скрытия на узких экранах — значит эти
+   колонки и так считаются второстепенными) теперь визуально приглушены и на
+   десктопе тоже, а не только скрыты на мобильном. */
+th.th-key{color:var(--text);font-weight:800}
+th.col-hide-md{color:#55555c;font-weight:500}
+td.col-hide-md{opacity:.82}
 td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.6)}
 tr:last-child td{border-bottom:none}
 tbody tr:hover td{background:rgba(255,255,255,.055);cursor:default}
@@ -717,6 +726,11 @@ textarea.inp::placeholder{color:var(--muted)}
           <div class="sec"><div class="sh"><span class="st">Доли брендов</span></div><div class="sb2"><div class="cw"><canvas id="ch-bd"></canvas></div></div></div>
           <div class="sec"><div class="sh"><span class="st">Топ брендов</span></div><div class="sb2"><div class="cw"><canvas id="ch-bb"></canvas></div></div></div>
         </div>
+        <!-- UX-аудит 29.07: свои бренды могут оказаться на местах #10, #21... —
+             звезда и тонкая полоса слева в общей таблице там уже не бросаются в
+             глаза. Закреплённая мини-сводка сверху — независимо от места в общем
+             рейтинге. -->
+        <div id="br-ours-box"></div>
         <div class="sec"><div class="sh"><span class="st">Все бренды</span><button class="btn-csv" onclick="exportCSV('t-bf','brands')"><i class="ti ti-download" style="font-size:12px"></i>CSV</button></div><div class="sb2"><div class="tw"><table id="t-bf" aria-label="Все бренды рынка"></table></div></div></div>
         <!-- БРН-03: stable container prevents scroll jump on re-render -->
         <div id="br-threats-box"></div>
@@ -909,7 +923,7 @@ textarea.inp::placeholder{color:var(--muted)}
             <div class="fb" style="margin-bottom:12px;flex-wrap:wrap;gap:8px">
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-size:13px;color:var(--muted);white-space:nowrap">Отдел:</span>
-                <select class="fsel" id="up-dept">
+                <select class="fsel" id="up-dept" onchange="renderUpload()">
                   <option value="frz">❄️ Морозильники</option>
                   <option value="ref">🟢 Холод. витрины</option>
                   <option value="ovn">🔥 Жарочные шкафы</option>
@@ -945,7 +959,17 @@ textarea.inp::placeholder{color:var(--muted)}
           </div>
         </div>
         <div class="sec">
-          <div class="sh"><span class="st">История загрузок</span></div>
+          <div class="sh" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+            <span class="st">История загрузок</span>
+            <!-- UX-аудит 29.07: раньше список показывал загрузки ВСЕХ отделов
+                 одновременно, независимо от выбранного слева «Отдел» — можно было
+                 решить, что видишь историю только своего отдела. Теперь по
+                 умолчанию фильтруется по выбранному отделу, с явным переключателем
+                 на полный список. -->
+            <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;font-weight:400">
+              <input type="checkbox" id="up-show-all" onchange="renderUpload()" style="cursor:pointer">Показать все отделы
+            </label>
+          </div>
           <div class="sb2" id="up-hist"><div class="ld"><div class="spin"></div>Загрузка...</div></div>
         </div>
       </div>
@@ -1610,12 +1634,21 @@ async function initLanding(){
       apig('/analytics/overview?department='+d.api).catch(()=>null),
       apig('/analytics/vetka?department='+d.api).catch(()=>null),
       apig('/analytics/strategy?department='+d.api).catch(()=>null),
+      // UX-аудит 29.07: раньше "Нет данных за этот период" показывался и когда
+      // отдел вообще ещё не запущен (0 загрузок), и когда данные есть, но не за
+      // текущий период — неотличимо друг от друга. Тянем список загрузок, чтобы
+      // различить эти два случая явным текстом.
+      apig('/uploads/?department='+d.api).catch(()=>[]),
     ]))
   );
   list.innerHTML = DEPTS.map((d,i) => {
-    const [ov, vt, st] = results[i];
+    const [ov, vt, st, uploads] = results[i];
     const hasData = ov && ov.total_revenue > 0;
+    const neverLaunched = !uploads || uploads.length===0;
     const stat = hasData ? computeDeptScore(ov, vt?.vetka||[], st||{}) : null;
+    const emptyMsg = neverLaunched
+      ? 'Отдел ещё не запущен — данные не загружались'
+      : 'Данные загружены, но не за текущий период';
     return `<div class="landing-row${hasData?'':' no-data'}" data-dept="${d.code}" onclick="selectLandingDept('${d.code}')">
       <div class="landing-row-main">
         <div class="landing-dept-ic" style="background:${drgba(d.code,.15)};color:${dcolor(d.code)}"><i class="ti ti-${d.icon}"></i></div>
@@ -1626,7 +1659,7 @@ async function initLanding(){
             <div class="landing-dept-kpis">
               <div><span class="ldk-v">${fmtR(ov.total_revenue)}</span><span class="ldk-l">рынок</span></div>
               <div><span class="ldk-v" style="color:${dcolor(d.code)}">${(+ov.our_share_pct||0).toFixed(1)}%</span><span class="ldk-l">наша доля</span></div>
-            </div>` : `<div class="landing-dept-empty">Нет данных за этот период</div>`}
+            </div>` : `<div class="landing-dept-empty">${emptyMsg}</div>`}
         </div>
         <i class="ti ti-chevron-right landing-row-chevron"></i>
       </div>
@@ -1954,7 +1987,7 @@ function ringSvg(pct,color,cap,size,suffix){
   </svg>`;
 }
 
-function mkDonut(id,labels,data,colors){
+function mkDonut(id,labels,data,colors,cutout){
   dch(id);const ctx=g(id);if(!ctx)return;
   // Limit to 7 slices + «Другие»
   let L=labels,D=data,C=colors||PAL;
@@ -1966,6 +1999,11 @@ function mkDonut(id,labels,data,colors){
   }
   CH[id]=new Chart(ctx,{type:'doughnut',data:{labels:L,datasets:[{data:D,backgroundColor:C,borderWidth:2,borderColor:'#131316'}]},
     options:{responsive:true,maintainAspectRatio:false,
+      // UX-аудит 29.07: «ABC рынок» и «ABC наши SKU» — одинаковые цвета (A/B/C
+      // зелёный/жёлтый/красный сохранены для консистентности со значками ABC
+      // по всему сайту), но с разной толщиной кольца, чтобы два донута не
+      // выглядели как один и тот же график, скопированный дважды.
+      cutout:cutout||'55%',
       plugins:{
         tooltip:{..._CHART_TOOLTIP,callbacks:{label:ctx=>' '+ctx.label+': '+fmtR(ctx.raw)}},
         legend:{position:'bottom',labels:{..._CHART_LEGEND,boxWidth:12}}
@@ -2243,6 +2281,25 @@ async function renderBrands(){
         brandDeltaMap[b.brand]=prev>0?((cur-prev)/prev*100):(cur>0?null:0);
       });
     }
+    // UX-аудит 29.07: закреплённая сводка «Наши бренды» с рангом в общем
+    // рейтинге — не нужно скроллить/искать звёздочку в общем списке.
+    const oursBox=g('br-ours-box');
+    if(oursBox){
+      const ours=brands.map((b,i)=>({...b,rank:i+1})).filter(b=>b.is_ours);
+      oursBox.innerHTML = ours.length ? `<div class="sec" style="margin-bottom:20px;border-left:3px solid ${dc()}">
+        <div class="sh"><span class="st"><i class="ti ti-star-filled" style="color:${dc()};font-size:14px"></i> Наши бренды в этом рейтинге</span></div>
+        <div class="sb2"><div class="tw"><table><thead><tr><th>#</th><th>Бренд</th><th>Выручка</th><th>Доля рынка</th><th>SKU</th></tr></thead><tbody>
+          ${ours.map(b=>`<tr class="rowlink" onclick="openBrandDrill(${b.rank-1})">
+            <td class="rn">${b.rank} <span style="color:var(--muted);font-size:11px">из ${brands.length}</span></td>
+            <td style="color:${dc()}">${escHtml(b.brand)}</td>
+            <td>${fmtR(b.revenue)}</td>
+            <td>${(+b.market_share_pct||0).toFixed(1)}%</td>
+            <td>${b.skus||0}</td>
+          </tr>`).join('')}
+        </tbody></table></div></div>
+      </div>` : '';
+    }
+
     const top10=brands.slice(0,10);
     mkDonut('ch-bd',top10.map(b=>b.brand),top10.map(b=>b.revenue),top10.map((b,i)=>b.is_ours?dc():PAL[i%PAL.length]));
     mkBar('ch-bb',top10.map(b=>b.brand.slice(0,20)),[{label:'Выручка',data:top10.map(b=>b.revenue),backgroundColor:top10.map(b=>b.is_ours?dc():'#2A2A30'),borderRadius:4}],true);
@@ -2379,13 +2436,17 @@ async function renderVetka(){
       const tip=v>8?'Выше рынка':v<-8?'Ниже рынка':'В рынке';
       return `<span style="color:${col};font-weight:600" title="${tip}">${sign}${v}%</span>`;
     };
+    // UX-аудит 29.07: 14 колонок одного визуального веса — ничего не
+    // подсказывало, на какие смотреть в первую очередь. .th-key выделяет
+    // 3 самые решающие для приоритизации: momentum (Δ мес.), позиция
+    // (Наша доля) и размер возможности (Потенциал ₸).
     g('t-vf').innerHTML=`<thead><tr>
         <th>#</th>
         <th>Ветка / Сегмент</th>
         <th style="text-align:right">Рынок ₸</th>
-        <th style="text-align:right" title="Изменение выручки рынка сегмента за последний загруженный месяц vs предыдущий">Δ мес. ⓘ</th>
+        <th class="th-key" style="text-align:right" title="Изменение выручки рынка сегмента за последний загруженный месяц vs предыдущий">Δ мес. ⓘ</th>
         <th style="text-align:right">Продажи шт</th>
-        <th style="text-align:right">Наша доля</th>
+        <th class="th-key" style="text-align:right">Наша доля</th>
         <th style="text-align:right" class="col-hide-md">Наши шт</th>
         <th>Лидер</th>
         <th style="text-align:right" class="col-hide-md">РРЦ рынок</th>
@@ -2393,7 +2454,7 @@ async function renderVetka(){
         <th style="text-align:right">Позиция</th>
         <th title="Оценка по отзывам, доле, конкуренции (0–100)" class="col-hide-md">Проникн. ⓘ</th>
         <th title="Кампания — активный сбор отзывов · Орг. — естественный рост без кампании">Мес. №1 ⓘ</th>
-        <th style="text-align:right">Потенциал ₸</th>
+        <th class="th-key" style="text-align:right">Потенциал ₸</th>
       </tr></thead><tbody>`+
       vetka.map((v,i)=>{
         const seg=segMap[v.vetka];
@@ -2583,8 +2644,11 @@ async function renderABC(){
     const d=await apig('/analytics/abc?'+qsp());
     if(!d||!d.market){ss('ab','em');return;}
     ss('ab','ct');
-    mkDonut('ch-am',['A','B','C'],[d.market.A||0,d.market.B||0,d.market.C||0],['#3FB950','#D29922','#F85149']);
-    mkDonut('ch-ao',['A','B','C'],[d.ours.A||0,d.ours.B||0,d.ours.C||0],['#3FB950','#D29922','#F85149']);
+    // UX-аудит 29.07: разная толщина кольца (cutout), чтобы «рынок» и «наши» не
+    // читались как одинаковая картинка — тонкое кольцо = общий рынок (много SKU),
+    // толстое кольцо = наш, более узкий срез.
+    mkDonut('ch-am',['A','B','C'],[d.market.A||0,d.market.B||0,d.market.C||0],['#3FB950','#D29922','#F85149'],'70%');
+    mkDonut('ch-ao',['A','B','C'],[d.ours.A||0,d.ours.B||0,d.ours.C||0],['#3FB950','#D29922','#F85149'],'40%');
     // ABC-01: comparative insight block
     const mA=d.market.A||0, oA=d.ours.A||0;
     const mTotal=(d.market.A||0)+(d.market.B||0)+(d.market.C||0)||1;
@@ -2650,9 +2714,16 @@ async function renderABC(){
 // ── UPLOAD ──
 async function renderUpload(){
   try{
-    const d=await apig('/uploads/');
+    const showAll=g('up-show-all')?.checked;
+    const curDept=g('up-dept')?.value;
+    // UX-аудит 29.07: фильтр по отделу — без него список смешивал загрузки всех
+    // 4 отделов и не было понятно, к какому отделу относится каждая запись.
+    const d=await apig('/uploads/'+(showAll||!curDept?'':'?department='+curDept));
     const hist=g('up-hist');
-    if(!d||!d.length){hist.innerHTML='<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Загрузок пока нет</div>';return;}
+    if(!d||!d.length){
+      hist.innerHTML=`<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">${showAll?'Загрузок пока нет':'Загрузок для этого отдела пока нет · <a href="#" onclick="event.preventDefault();g(\'up-show-all\').checked=true;renderUpload()" style="color:var(--ice)">показать все отделы</a>'}</div>`;
+      return;
+    }
     const sorted=[...d].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
     hist.innerHTML=sorted.map(u=>{
       const deptEntry=DEPTS.find(x=>x.api===u.department)||DMAP.frz;
@@ -3242,6 +3313,17 @@ function openVetkaDrill(i){
     chips:_chip(DL[A.dept],'var(--ice)')+(A.sub?_chip(A.sub,'var(--ice)'):'')+_chip(escHtml(v.vetka),'var(--yellow)'),
   });
 }
+// UX-аудит 29.07: «План захвата сегментов» на Приоритетах ссылается по имени
+// ветки на тот же дрилл-даун, что и таблица «Все ветки» — вместо повторения
+// всех колонок в этой таблице, полный разбор всегда открывается отсюда же.
+function openSegPlanDrill(vetkaName){
+  if(!vetkaName)return;
+  drillGeneric({
+    apiName:DA[A.dept], month:A.month||null, subtype:A.sub||null, vetka:vetkaName,
+    title:`Ветка «${escHtml(vetkaName)}»`,
+    chips:_chip(DL[A.dept],'var(--ice)')+(A.sub?_chip(A.sub,'var(--ice)'):'')+_chip(escHtml(vetkaName),'var(--yellow)'),
+  });
+}
 function openBrandDrill(i){
   const b=(window._brData||[])[i]; if(!b)return;
   drillGeneric({
@@ -3755,7 +3837,11 @@ async function renderTrends(){
       return `<span style="font-size:11px;color:${color}" aria-label="${label} ${n>0?'+':''}${v}${suffix}">${icon} ${n>0?'+':''}${v}${suffix}</span>`;
     }
 
-    const kpiHtml = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:18px">
+    // UX-аудит 29.07: раньше был inline grid с minmax(180px,1fr) — при 28px жирном
+    // шрифте "229.0 млн ₸" не помещалось и обрезалось многоточием. .kpi-grid (тот же
+    // класс, что на Обзоре) использует minmax(0,1fr) в 4 колонки — резинового
+    // поведения без обрезания текста.
+    const kpiHtml = `<div class="kpi-grid" style="margin-bottom:18px">
       <div class="kc"><div class="kc-ic"><i class="ti ti-trending-up"></i></div>
         <div class="kl">Рынок (${last.month||''})</div>
         <div class="kv">${fmtR(last.revenue||0)}</div>
@@ -4320,7 +4406,14 @@ async function renderTactics(){
     // This is the page's signature visual: the one number that answers
     // "are we ok" for this department, shown the way a credit/health score would be.
     g('tc-status').innerHTML=`
-      <div class="sec" style="margin-bottom:20px">
+      <div class="sec" data-sr="1" style="margin-bottom:20px">
+        <!-- UX-аудит 29.07: карточка «Общий счёт» иногда рендерилась с opacity:0 —
+             initScrollReveal() навешивал .reveal-ready (opacity:0) на КАЖДЫЙ .sec,
+             включая этот, при каждой перерисовке страницы (смена отдела/месяца
+             пересоздаёт этот div через innerHTML), и IntersectionObserver не всегда
+             успевал вовремя вернуть видимость для блока, который и так уже в первом
+             экране. data-sr="1" исключает этот конкретный блок из scroll-reveal —
+             ему не нужна анимация появления по скроллу, он должен быть виден сразу. -->
         <div class="sb2" style="display:flex;align-items:center;gap:28px;flex-wrap:wrap">
           ${ringSvg(score,scoreColor,100,110,'')}
           <div style="flex:1;min-width:200px">
@@ -4700,23 +4793,28 @@ async function renderTactics(){
       // Add segment plan section
       const segPlanRows = segIntel.filter(s=>s.our_revenue>0||s.revenue_opportunity>5e6).slice(0,15);
       if(segPlanRows.length>0){
+        // UX-аудит 29.07: раньше эта таблица почти дословно повторяла «Все ветки»
+        // (Рынок, Наша доля, Лидер, Проникн. — те же данные, что и на вкладке
+        // Ветки). Убрана колонка «Рынок» (чистое дублирование — размер рынка уже
+        // виден на Ветках), строки теперь кликабельны и ведут в тот же
+        // дрилл-даун, что и на Ветках — вместо повторения цифр здесь, полный
+        // разбор всегда в одном месте.
         const planHtml=`<div class="sec" data-segplan="1" style="margin-top:20px">
           <div class="sh">
             <span class="st"><i class="ti ti-stairs" style="color:var(--blue)"></i> План захвата сегментов — время до лидерства</span>
-            <span style="font-size:11px;color:var(--muted)">Расчёт: при кампании сбора отзывов (10/мес) vs органически (2/мес)</span>
+            <span style="font-size:11px;color:var(--muted)">Расчёт: при кампании сбора отзывов (10/мес) vs органически (2/мес) · клик по строке — полный разбор ветки</span>
           </div>
           <div class="sb2">
             <div class="tw">
             <table class="seg-plan">
               <thead><tr>
                 <th>Ветка / Сегмент</th>
-                <th>Рынок</th>
                 <th>Лидер</th>
                 <th>Наша доля</th>
                 <th>Разрыв отзывов</th>
-                <th>До №1 кампания</th>
+                <th class="th-key">До №1 кампания</th>
                 <th>До №1 органика</th>
-                <th>Потенциал ₸</th>
+                <th class="th-key">Потенциал ₸</th>
                 <th>Проник.</th>
               </tr></thead>
               <tbody>
@@ -4724,9 +4822,8 @@ async function renderTactics(){
                 const shareColor=s.our_share_pct>=20?'var(--green)':s.our_share_pct>=8?'var(--yellow)':s.our_revenue>0?'var(--red)':'var(--muted)';
                 const penClass=s.penetrability_score>=60?'high':s.penetrability_score>=35?'med':'low';
                 const isLeader=s.months_campaign===0;
-                return `<tr>
+                return `<tr class="rowlink" onclick="if(!event.target.closest('a'))openSegPlanDrill('${_jsEsc(s.vetka)}')">
                   <td style="font-weight:500;max-width:180px">${s.vetka}</td>
-                  <td style="white-space:nowrap">${fmtR(s.market_revenue)}</td>
                   <td style="font-size:12px">${s.leader_brand?`${s.leader_brand} <span style="color:var(--red)">${s.leader_share_pct.toFixed(0)}%</span> ${kLink(s.leader_name||'',s.leader_brand,true,s.vetka,s.leader_kod||'')}`:'—'}</td>
                   <td style="color:${shareColor};font-weight:600">${s.our_share_pct>0?s.our_share_pct.toFixed(1)+'%':'—'}</td>
                   <td style="text-align:center">${s.reviews_gap>0?`<span style="color:var(--red)">-${s.reviews_gap}</span>`:isLeader?`<span style="color:var(--green)">✓</span>`:'—'}</td>
@@ -4740,7 +4837,7 @@ async function renderTactics(){
             </table>
             </div>
             <p style="font-size:11px;color:var(--muted);margin-top:10px">
-              ℹ Проникновение 0–100: чем выше, тем проще войти в сегмент. Потенциал ₸ = сколько дополнительной выручки при достижении доли лидера.
+              ℹ Проникновение 0–100: чем выше, тем проще войти в сегмент. Потенциал ₸ = сколько дополнительной выручки при достижении доли лидера. Размер рынка и полный набор метрик по каждой ветке — на вкладке «Ветки».
               ${roiOverall>0?`Расчётная стоимость 1 отзыва в среднем по рынку: <strong style="color:var(--green)">${fmtR(roiOverall)}</strong>.`:''}
             </p>
           </div>

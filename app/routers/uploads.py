@@ -169,9 +169,24 @@ def _build_col_map(headers: tuple) -> dict[str, int]:
     col: dict[str, int] = {}
     for idx, h in enumerate(headers):
         n = _norm(h)
-        # Exact matches first
-        if n in HEADER_MAP and HEADER_MAP[n] not in col:
-            col[HEADER_MAP[n]] = idx
+        # Exact matches first — and if one fires, this column's identity is
+        # fully resolved, so skip the fuzzy loop below entirely for it.
+        #
+        # БАГ (найден в UX-аудите 29.07, подтверждено на реальных файлах):
+        # раньше фаззи-цикл ВСЕГДА выполнялся, даже после точного совпадения.
+        # Для заголовка "КОД товара" точное совпадение верно ставило col["kod"],
+        # но затем тот же текст "код товара" содержит подстроку "товар", и
+        # фаззи-правило ("товар" → "name") перехватывало ЭТУ ЖЕ колонку под
+        # "name" (т.к. поле "name" ещё не было занято на этой итерации). Когда
+        # цикл доходил до настоящего "Название товара", col["name"] уже был
+        # занят индексом колонки "Код", и реальное имя товара никогда не
+        # читалось — get("name") и get("kod") указывали на одну ячейку.
+        # Итог: "Название" в интерфейсе показывало код товара на каждой строке.
+        if n in HEADER_MAP:
+            field = HEADER_MAP[n]
+            if field not in col:
+                col[field] = idx
+            continue
         # Fuzzy fallbacks — ordered from most specific to least
         for keyword, field in [
             ("бренд",    "brand"),
@@ -476,6 +491,88 @@ async def upload_file(
         "subtypes": upload.subtypes,
         "created_at": upload.created_at.isoformat(),
         "tip_classification": tip_classification,
+    }
+
+
+@router.post("/backfill-names", summary="Fix name==kod rows caused by the old column-mapping bug")
+async def backfill_names(
+    file: UploadFile = File(...),
+    department: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    """
+    UX-аудит 29.07 нашёл, что "Название" на Товарах/ABC/Приоритетах показывало
+    код товара вместо имени. Причина — баг в _build_col_map (см. комментарий
+    там): для строк, загруженных ДО фикса, поле name в БД уже сохранено как
+    копия kod. Этот endpoint НЕ трогает данные заново (не создаёт новый Upload,
+    не пересчитывает метрики) — он только допроверяет по kod уже загруженный
+    файл этого отдела и обновляет name у существующих строк, где он сейчас
+    пуст ИЛИ совпадает с kod (сигнатура именно этого бага). Строки, где name
+    уже отличается от kod, не трогаются — чтобы не затереть ничего, что могло
+    быть верным.
+    """
+    if department not in DeptEnum.__members__:
+        raise HTTPException(400, f"Unknown department: {department}")
+    dept = DeptEnum[department]
+
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"Файл слишком большой (максимум {MAX_UPLOAD_BYTES // 1024 // 1024} МБ)")
+
+    import tempfile
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        parsed = parse_excel(tmp_path)
+    except Exception as e:
+        raise HTTPException(422, f"Parse error: {e}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    if not parsed:
+        raise HTTPException(422, "No data rows found. Check file format.")
+
+    # Один kod может повторяться в файле (разные месяцы) с одним и тем же
+    # именем — оставляем последнее непустое имя на код.
+    name_by_kod: dict[str, str] = {}
+    for r in parsed:
+        if r["kod"] and r["name"]:
+            name_by_kod[r["kod"]] = r["name"]
+
+    updated = 0
+    already_ok = 0
+    not_found = []
+    for kod, correct_name in name_by_kod.items():
+        result = await db.execute(
+            select(KaspiRow).where(
+                KaspiRow.department == dept,
+                KaspiRow.kod == kod,
+            )
+        )
+        rows = result.scalars().all()
+        if not rows:
+            not_found.append(kod)
+            continue
+        for row in rows:
+            if not row.name or row.name.strip() == "" or row.name.strip() == kod.strip():
+                row.name = correct_name
+                updated += 1
+            else:
+                already_ok += 1
+
+    await db.commit()
+
+    return {
+        "department": department,
+        "kods_in_file": len(name_by_kod),
+        "rows_updated": updated,
+        "rows_already_had_a_name": already_ok,
+        "kods_not_found_in_db": len(not_found),
+        "kods_not_found_sample": not_found[:20],
     }
 
 
