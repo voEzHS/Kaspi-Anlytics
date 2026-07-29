@@ -694,8 +694,13 @@ textarea.inp::placeholder{color:var(--muted)}
       <div id="ov-em" class="empty" style="display:none"><i class="ti ti-upload"></i><h3>Загрузи данные</h3><p>Перейди в <strong><a onclick="showPage('upload')" style="color:var(--blue);cursor:pointer;text-decoration:underline">Загрузка</a></strong> и загрузи Excel-выгрузку Kaspi</p><button class="btn btn-p" style="margin-top:16px" onclick="showPage('upload')"><i class="ti ti-upload"></i>Загрузить данные</button></div>
       <div id="ov-ct" style="display:none">
         <div class="kpi-grid" id="kpi-g"></div>
-        <div id="cmp-b"></div>
+        <!-- IA-аудит июль 2026: «Что изменилось» — первое, что должен увидеть
+             человек после самих цифр (Уровень 1 «Пульс отдела»), поэтому
+             стоит ДО баннера позиции на рынке и сравнения типов — иначе тонет
+             ниже двух экранов и его никто не видит (обнаружено в ревью с
+             Дамиром 29.07: фича технически работала, но была не видна). -->
         <div id="whats-changed-box"></div>
+        <div id="cmp-b"></div>
         <div class="g2">
           <div class="sec"><div class="sh"><span class="st">Динамика выручки</span></div><div class="sb2"><div class="cw"><canvas id="ch-m"></canvas></div></div></div>
           <div class="sec"><div class="sh"><span class="st">Топ-10 брендов</span><button class="btn-csv" onclick="exportCSV('t-tb','top-brands')"><i class="ti ti-download" style="font-size:12px"></i>CSV</button></div><div class="sb2"><div class="tw"><table id="t-tb" aria-label="Топ брендов по выручке"></table></div></div></div>
@@ -3083,7 +3088,9 @@ function _jsEsc(s){ return (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
 // июль 2026 — Уровень 3 «Товар»).
 function historyBtn(kod, apiName, subtype){
   if(!kod) return '';
-  return `<button onclick="event.stopPropagation();openSkuHistory({apiName:'${_jsEsc(apiName)}',kod:'${_jsEsc(kod)}',subtype:${subtype?`'${_jsEsc(subtype)}'`:'null'}})" title="История по месяцам" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);padding:2px 6px;cursor:pointer;font-size:11px;margin-left:4px;display:inline-flex;align-items:center;vertical-align:middle"><i class="ti ti-chart-line" style="font-size:11px"></i></button>`;
+  // Текстовая подпись, а не только иконка — до 29.07 кнопка была голой
+  // иконкой без подписи и терялась в таблице (найдено в ревью с Дамиром).
+  return `<button onclick="event.stopPropagation();openSkuHistory({apiName:'${_jsEsc(apiName)}',kod:'${_jsEsc(kod)}',subtype:${subtype?`'${_jsEsc(subtype)}'`:'null'}})" title="История по месяцам" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);padding:2px 7px;cursor:pointer;font-size:11px;margin-left:4px;display:inline-flex;align-items:center;gap:3px;vertical-align:middle;white-space:nowrap"><i class="ti ti-chart-line" style="font-size:11px"></i>История</button>`;
 }
 async function drillGeneric(cfg){
   const existing=document.getElementById('drill-modal');
