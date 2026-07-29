@@ -26,7 +26,12 @@ class Upload(Base):
     row_count = Column(Integer, default=0)
     months = Column(JSON, default=list)       # ["Январь 2025", "Февраль 2025"]
     subtypes = Column(JSON, default=list)     # ["Ларь", "Бонета"] – unique Тип values
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # Колонка DateTime без timezone=True в Postgres — это TIMESTAMP WITHOUT
+    # TIME ZONE. datetime.now(timezone.utc) даёт tz-aware объект — asyncpg
+    # падает с "can't subtract offset-naive and offset-aware datetimes" при
+    # попытке его записать. .replace(tzinfo=None) убирает метку, само время
+    # остаётся в UTC (как и было задумано), просто без явного tzinfo.
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     rows = relationship("KaspiRow", back_populates="upload", cascade="all, delete-orphan", lazy="select")
 
@@ -76,4 +81,9 @@ class AppSettings(Base):
     id = Column(Integer, primary_key=True)
     key = Column(String(100), unique=True, nullable=False)
     value = Column(JSON, nullable=True)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    # Тот же tz-aware/tz-naive конфликт, что и у Upload.created_at выше.
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+    )

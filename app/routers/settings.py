@@ -70,7 +70,7 @@ async def save_settings(
 
     if setting:
         setting.value = brands
-        setting.updated_at = datetime.now(timezone.utc)
+        setting.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     else:
         db.add(AppSettings(key="our_brands", value=brands))
 
