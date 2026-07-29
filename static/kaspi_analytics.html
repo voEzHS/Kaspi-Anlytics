@@ -251,6 +251,13 @@ input.inp::placeholder{color:var(--muted)}
 .g2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-bottom:20px}
 @media(max-width:1000px){.g2{grid-template-columns:1fr}}
 
+/* UX-структурный редизайн 29.07: Приоритеты — 2 колонки вместо одной длинной
+   ленты (было ~10 экранов прокрутки на полном наборе данных). Левая чуть шире
+   (1.15fr) — там основной сценарий «счёт → приоритет → план → действия»,
+   правая (1fr) — опорные данные (разбор счёта, инсайты, AI). */
+.tc-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:20px;align-items:start}
+@media(max-width:1100px){.tc-cols{grid-template-columns:1fr}}
+
 .cw{position:relative;height:clamp(220px,26vh,340px);width:100%}.cwsm{position:relative;height:clamp(180px,20vh,240px);width:100%}
 
 /* ── TABLES ─────────────────────────────────────────────────────────── */
@@ -640,10 +647,10 @@ textarea.inp::placeholder{color:var(--muted)}
   <div class="nav-sec">
     <div class="sl">Аналитика</div>
     <button class="nb active" data-p="overview" onclick="showPage('overview')"><i class="ti ti-layout-dashboard nav-ic" style="color:var(--blue);background:rgba(99,102,241,.14)"></i>Обзор</button>
-    <button class="nb" data-p="brands" onclick="showPage('brands')"><i class="ti ti-building-store nav-ic" style="color:var(--purple);background:rgba(163,113,247,.14)"></i>Бренды</button>
-    <button class="nb" data-p="vetka" onclick="showPage('vetka')"><i class="ti ti-git-branch nav-ic" style="color:var(--ice);background:rgba(96,184,212,.14)"></i>Ветки</button>
-    <button class="nb" data-p="products" onclick="showPage('products')"><i class="ti ti-packages nav-ic" style="color:var(--yellow);background:rgba(210,153,34,.14)"></i>Товары</button>
-    <button class="nb" data-p="abc" onclick="showPage('abc')"><i class="ti ti-chart-pie nav-ic" style="color:var(--red);background:rgba(248,81,73,.14)"></i>ABC-анализ</button>
+    <!-- UX-структурный редизайн 29.07: Бренды/Ветки/Товары/ABC-анализ были 4
+         отдельными пунктами меню — теперь один «Каталог», разрез по измерению
+         переключается сверху страницы (см. .cat-view-bar). -->
+    <button class="nb" data-p="catalog" onclick="showPage('catalog')"><i class="ti ti-building-store nav-ic" style="color:var(--purple);background:rgba(163,113,247,.14)"></i>Каталог</button>
     <button class="nb" data-p="trends" onclick="showPage('trends')"><i class="ti ti-chart-line nav-ic" style="color:var(--green);background:rgba(63,185,80,.14)"></i>Тренды</button>
     <button class="nb" data-p="priority" onclick="showPage('priority')"><i class="ti ti-cash nav-ic" style="color:var(--green);background:rgba(63,185,80,.14)"></i>Приоритеты</button>
   </div>
@@ -715,6 +722,13 @@ textarea.inp::placeholder{color:var(--muted)}
           <div class="sec"><div class="sh"><span class="st">Топ-10 брендов</span><button class="btn-csv" onclick="exportCSV('t-tb','top-brands')"><i class="ti ti-download" style="font-size:12px"></i>CSV</button></div><div class="sb2"><div class="tw"><table id="t-tb" aria-label="Топ брендов по выручке"></table></div></div></div>
         </div>
       </div>
+    </div>
+
+    <!-- UX-структурный редизайн 29.07: единый переключатель измерения для
+         объединённого раздела «Каталог» (Ветки/Бренды/Товары/ABC — один и тот
+         же ассортимент под разными разрезами, вместо 4 отдельных пунктов меню). -->
+    <div class="pri-scope-bar" id="cat-view-bar" style="display:none">
+      <span class="pri-scope-label">Смотреть по:</span>
     </div>
 
     <!-- BRANDS -->
@@ -830,32 +844,45 @@ textarea.inp::placeholder{color:var(--muted)}
       <div id="tc-ld" class="ld"><div class="spin"></div>Анализирую данные...</div>
       <div id="tc-em" class="empty" style="display:none"><i class="ti ti-target"></i><h3>Нет данных</h3><p>Сначала загрузи Excel-выгрузку</p><button class="btn btn-p" style="margin-top:16px" onclick="showPage('upload')"><i class="ti ti-upload"></i>Загрузить данные</button></div>
       <div id="tc-ct" style="display:none">
-        <div id="tc-status"></div>
-        <div id="tc-priority"></div>
-        <div id="tc-plan"></div>
-        <div id="tc-score"></div>
-        <div class="insight-grid" id="tc-insights"></div>
-        <div class="sec">
-          <div class="sh"><span class="st"><i class="ti ti-player-play" style="color:var(--blue)"></i> Конкретные действия на следующий период</span></div>
-          <div class="sb2" id="tc-actions"></div>
-        </div>
-        <div class="sec">
-          <div class="sh">
-            <span class="st"><i class="ti ti-robot" style="color:var(--ice)"></i> Стратегия от AI-аналитика</span>
+        <!-- UX-структурный редизайн 29.07: раньше всё шло одной вертикальной
+             колонкой — на Морозильниках ~10 экранов прокрутки, чтобы дойти до
+             AI-стратегии внизу. Слева — история «что происходит → что делать»
+             (счёт, топ-приоритет, план на неделю, действия), справа — опорные
+             данные для проверки (разбивка счёта, инсайты, AI-ассистент).
+             Таблица «План захвата сегментов» ниже — во всю ширину, у неё
+             8 колонок и в узкой половине экрана она бы не поместилась. -->
+        <div class="tc-cols">
+          <div class="tc-col-left">
+            <div id="tc-status"></div>
+            <div id="tc-priority"></div>
+            <div id="tc-plan"></div>
+            <div class="sec">
+              <div class="sh"><span class="st"><i class="ti ti-player-play" style="color:var(--blue)"></i> Конкретные действия на следующий период</span></div>
+              <div class="sb2" id="tc-actions"></div>
+            </div>
           </div>
-          <div class="sb2">
-            <div style="font-size:12px;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <i class="ti ti-info-circle" style="font-size:13px"></i>
-              <span id="ai-ctx-tc">Требует ANTHROPIC_API_KEY</span>
+          <div class="tc-col-right">
+            <div id="tc-score"></div>
+            <div class="insight-grid" id="tc-insights"></div>
+            <div class="sec">
+              <div class="sh">
+                <span class="st"><i class="ti ti-robot" style="color:var(--ice)"></i> Стратегия от AI-аналитика</span>
+              </div>
+              <div class="sb2">
+                <div style="font-size:12px;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <i class="ti ti-info-circle" style="font-size:13px"></i>
+                  <span id="ai-ctx-tc">Требует ANTHROPIC_API_KEY</span>
+                </div>
+                <div class="ai-filters">
+                  <select class="sel" id="ai-vetka-sel-tc" style="min-width:200px">
+                    <option value="">Все ветки (общая стратегия)</option>
+                  </select>
+                </div>
+                <textarea class="inp" id="ai-query-tc" rows="2" style="width:100%;margin-bottom:12px" placeholder="Необязательно — свой вопрос, например: «что делать с ларями 500-600л»"></textarea>
+                <button class="btn btn-ice btn-sm" onclick="genAI('tc')" id="ai-btn-tc"><i class="ti ti-sparkles"></i>Определить приоритеты</button>
+                <div id="ai-r-tc" style="margin-top:14px"></div>
+              </div>
             </div>
-            <div class="ai-filters">
-              <select class="sel" id="ai-vetka-sel-tc" style="min-width:200px">
-                <option value="">Все ветки (общая стратегия)</option>
-              </select>
-            </div>
-            <textarea class="inp" id="ai-query-tc" rows="2" style="width:100%;margin-bottom:12px" placeholder="Необязательно — свой вопрос, например: «что делать с ларями 500-600л»"></textarea>
-            <button class="btn btn-ice btn-sm" onclick="genAI('tc')" id="ai-btn-tc"><i class="ti ti-sparkles"></i>Определить приоритеты</button>
-            <div id="ai-r-tc" style="margin-top:14px"></div>
           </div>
         </div>
       </div>
@@ -1071,9 +1098,20 @@ const DL=Object.fromEntries(DEPTS.map(d=>[d.code,d.label]));
 const DA=Object.fromEntries(DEPTS.map(d=>[d.code,d.api]));
 function drgba(code,a){return `rgba(${(DMAP[code]||DMAP.frz).rgb},${a})`}
 function dcolor(code){return `var(${(DMAP[code]||DMAP.frz).cssVar})`}
-const PTITLES={overview:'Обзор',priority:'Приоритеты',brands:'Бренды',vetka:'Ветки',products:'Товары',abc:'ABC',trends:'Тренды',tactics:'Тактика',upload:'Загрузка',settings:'Настройки'};
+const PTITLES={overview:'Обзор',priority:'Приоритеты',catalog:'Каталог',brands:'Бренды',vetka:'Ветки',products:'Товары',abc:'ABC',trends:'Тренды',tactics:'Тактика',upload:'Загрузка',settings:'Настройки'};
 
-const A={dept:'frz',month:'',sub:'',subs:[],pp:1,ps:50,ptotal:0,pOursOnly:false};
+const A={dept:'frz',month:'',sub:'',subs:[],pp:1,ps:50,ptotal:0,pOursOnly:false,catalogView:'vetka'};
+// UX-структурный редизайн 29.07: 4 отдельных пункта навигации (Бренды/Ветки/
+// Товары/ABC-анализ) объединены в один раздел «Каталог» — они смотрят на один
+// и тот же ассортимент под разными углами, и раньше их данные ощутимо
+// повторялись (см. UX-аудит: «Дублирование сегментной таблицы»). Один пункт
+// меню + переключатель измерения внутри, вместо 4 разных мест в сайдбаре.
+const CATALOG_VIEWS=[
+  {id:'vetka',    label:'Ветки',       icon:'ti-git-branch'},
+  {id:'brands',   label:'Бренды',      icon:'ti-building-store'},
+  {id:'products', label:'Товары',      icon:'ti-packages'},
+  {id:'abc',      label:'ABC-анализ',  icon:'ti-chart-pie'},
+];
 if(!window._brands) window._brands=new Set(['AOLIEGE','FRIGGIER','LEADBROS','XINGX','MUXXED']);
 
 // ── HELPERS ──
@@ -1525,13 +1563,23 @@ function renderTopInsight(){
 function showPage(name){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const scopeBar=g('pri-scope-bar');
+  const catBar=g('cat-view-bar');
   if(name==='priority'){
     // Объединённый раздел Тактика+Приоритеты (IA-аудит, июль 2026) — показываем
     // тот вид, что соответствует текущей области действия (по умолчанию — «Этот отдел»)
     if(scopeBar) scopeBar.style.display='';
+    if(catBar) catBar.style.display='none';
     _applyPriScope(A.priScope||'dept');
+  } else if(name==='catalog'){
+    // UX-структурный редизайн 29.07: объединённый раздел Каталог (Ветки/
+    // Бренды/Товары/ABC-анализ) — показываем измерение, на котором
+    // остановились в прошлый раз (по умолчанию — Ветки).
+    if(scopeBar) scopeBar.style.display='none';
+    if(catBar) catBar.style.display='';
+    _applyCatalogView(A.catalogView||'vetka');
   } else {
     if(scopeBar) scopeBar.style.display='none';
+    if(catBar) catBar.style.display='none';
     const _pg=g('page-'+name);
     _pg.style.animation='none';
     void _pg.offsetHeight; // force reflow so CSS animation restarts
@@ -1585,6 +1633,42 @@ function _applyPriScope(scope){
     target.classList.add('active');
   }
 }
+// UX-структурный редизайн 29.07: «Каталог» объединяет 4 бывших отдельных
+// пункта меню (Бренды/Ветки/Товары/ABC-анализ). Один и тот же принцип, что и
+// у _applyPriScope/setPriScope выше — переключаем .active между уже
+// существующими .page-div'ами, ничего не меняя в самих render-функциях.
+function initCatalogViewBar(){
+  const bar=g('cat-view-bar');
+  if(!bar||bar.querySelector('.pri-scope-btn'))return; // уже заполнен
+  CATALOG_VIEWS.forEach(v=>{
+    const btn=document.createElement('button');
+    btn.className='pri-scope-btn';
+    btn.dataset.view=v.id;
+    btn.onclick=()=>setCatalogView(v.id);
+    btn.innerHTML=`<i class="ti ${v.icon}"></i>${v.label}`;
+    bar.appendChild(btn);
+  });
+}
+function _applyCatalogView(view){
+  if(!CATALOG_VIEWS.some(v=>v.id===view)) view='vetka';
+  A.catalogView=view;
+  document.querySelectorAll('#cat-view-bar .pri-scope-btn').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
+  ['brands','vetka','products','abc'].forEach(id=>{
+    const el=g('page-'+id);
+    if(!el)return;
+    if(id===view){
+      el.style.animation='none'; void el.offsetHeight; el.style.animation='';
+      el.classList.add('active');
+    } else el.classList.remove('active');
+  });
+}
+// Bound to the sub-tab buttons inside «Каталог» — switches which dimension
+// (Ветки/Бренды/Товары/ABC) is shown, without leaving the catalog nav item.
+function setCatalogView(view){
+  _applyCatalogView(view);
+  updatePageTitle('catalog');
+  renderActive();
+}
 // Bound to the «Этот отдел / Вся компания» toggle buttons — switches scope
 // while already on the merged Приоритеты page (no full navigation).
 function setPriScope(scope){
@@ -1603,6 +1687,9 @@ function updatePageTitle(name){
     title=(A.priScope||'dept')==='company'
       ? 'Приоритеты по деньгам — все категории'
       : `Приоритеты — ${DL[A.dept]}${A.sub?' / '+A.sub:''}`;
+  } else if(name==='catalog'){
+    const viewLabel=(CATALOG_VIEWS.find(v=>v.id===A.catalogView)||CATALOG_VIEWS[0]).label;
+    title=`Каталог — ${viewLabel}`;
   } else {
     title=A.sub?`${base} — ${A.sub}`:base;
   }
@@ -4993,6 +5080,7 @@ function toast(msg,type='default'){
 // see initLanding()'s comment for why.
 (async()=>{
   initScrollReveal();
+  initCatalogViewBar();
   await checkAPI();
   await initLanding();
 })();
