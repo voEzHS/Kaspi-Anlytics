@@ -9,10 +9,14 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.models import AppSettings, DeptEnum, KaspiRow
+from app.models.models import DeptEnum, KaspiRow
 from app.analytics import engine
 from app.routers.uploads import require_admin
 from sqlalchemy import select
+# "Our brands" logic lives in one place — app/routers/settings.py — and is
+# imported here rather than duplicated, so it can't silently drift out of
+# sync with what the Settings UI shows/edits.
+from app.routers.settings import get_our_brands as _get_our_brands
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
 
@@ -23,9 +27,38 @@ DEPT_LABELS = {
     "ice_makers": "Льдогенераторы",
 }
 
-_MANDATORY_BRANDS: set[str] = {"AOLIEGE", "FRIGGIER", "LEADBROS", "XINGX", "MUXXED"}
+# Known strategic positioning per brand, injected into the system prompt
+# dynamically (see _brand_block below) so the AI persona always knows about
+# every brand actually configured as "ours" — not just a hardcoded subset.
+# Brands with no entry here still get included in the list, with a generic
+# fallback line, instead of being silently omitted from the AI's context.
+_BRAND_BLURBS: dict[str, str] = {
+    "AOLIEGE": "флагман. Широкий ассортимент ларей и бонет. Основной генератор выручки.\n"
+               "  Цель: держать лидерство в ключевых ветках 500-800л.",
+    "FRIGGIER": "позиционирование \"выше среднего\". Итальянский дизайн, упор на качество.\n"
+                "  Работает в сегментах где цена не главный фактор. Должен держать рейтинг 4.8+.",
+    "LEADBROS": "коммерческий сегмент. Бонеты и витрины для магазинов и торговых точек.\n"
+                "  Ключевой игрок в холодильных витринах (отдел refrigerated).",
+    "XINGX": "специализация исключительно на ларях (морозильные сундуки). Всегда наш бренд.\n"
+             "  Сильный в объёмах 400-600л.",
+    "MUXXED": "кросс-категорийный бренд. Всегда наш. Дополняет ассортимент в нишах.",
+    "BACKERCRAFT": "наш бренд в отделе Жарочные шкафы. Всегда наш бренд.",
+}
 
-# Deep persona and company knowledge injected as system prompt
+
+def _brand_block(our_brands: set[str]) -> str:
+    lines = []
+    for b in sorted(our_brands):
+        blurb = _BRAND_BLURBS.get(b, "наш бренд — всегда считается своим независимо от отдела.")
+        lines.append(f"• {b} — {blurb}")
+    return "\n".join(lines)
+
+
+# Deep persona and company knowledge injected as system prompt.
+# {{BRAND_BLOCK}} / {{BRAND_LIST}} are replaced at request time (see
+# build_system_prompt) with the live our_brands list — never hardcode a
+# brand name/count here again, that's what caused BACKERCRAFT to be missing
+# from the AI's context in July 2026.
 SYSTEM_PROMPT = """Ты — Азамат, старший аналитик и стратег маркетплейса в компании TorgStore (Казахстан).
 Ты работаешь в компании уже 4 года, прошёл путь от операциониста до главного аналитика.
 Ты знаешь каждый SKU, каждую ветку, каждого конкурента. Когда доля падает — ты не спишь.
@@ -39,16 +72,8 @@ TorgStore — казахстанский продавец на Kaspi Marketplace
 холодильном и кухонном оборудовании. Работаем в четырёх отделах: Морозильники, Холодильные
 витрины, Жарочные шкафы и Льдогенераторы.
 
-НАШИ БРЕНДЫ (все пять — всегда наши, без исключений):
-• AOLIEGE — флагман. Широкий ассортимент ларей и бонет. Основной генератор выручки.
-  Цель: держать лидерство в ключевых ветках 500-800л.
-• FRIGGIER — позиционирование "выше среднего". Итальянский дизайн, упор на качество.
-  Работает в сегментах где цена не главный фактор. Должен держать рейтинг 4.8+.
-• LEADBROS — коммерческий сегмент. Бонеты и витрины для магазинов и торговых точек.
-  Ключевой игрок в холодильных витринах (отдел refrigerated).
-• XINGX — специализация исключительно на ларях (морозильные сундуки). Всегда наш бренд.
-  Сильный в объёмах 400-600л.
-• MUXXED — кросс-категорийный бренд. Всегда наш. Дополняет ассортимент в нишах.
+НАШИ БРЕНДЫ (всегда наши, без исключений):
+{{BRAND_BLOCK}}
 
 СТРАТЕГИЧЕСКИЕ ЦЕЛИ:
 • Доля рынка в ключевых ветках: >20%
@@ -169,7 +194,7 @@ KASPI РАССРОЧКА И KASPI GOLD:
 
 БРЕНДЫ:
 • Сравнение всех брендов рынка: выручка, доля, SKU, средний рейтинг
-• Наши бренды выделены синим (AOLIEGE, FRIGGIER, LEADBROS, XINGX, MUXXED)
+• Наши бренды выделены синим ({{BRAND_LIST}})
 • Метки "растущей угрозы" — бренды конкурентов которые быстро растут
 • Выручка на SKU (efficiency) — сравниваем нашу эффективность vs конкуренты
 • Прямые ссылки на Kaspi для топ-товаров каждого бренда
@@ -636,12 +661,17 @@ async def generate_report(
         raise HTTPException(500, f"Ошибка построения промпта ({type(e).__name__}): {e}")
 
     try:
+        system_prompt = (
+            SYSTEM_PROMPT
+            .replace("{{BRAND_BLOCK}}", _brand_block(our_brands))
+            .replace("{{BRAND_LIST}}", ", ".join(sorted(our_brands)))
+        )
         client = anthropic.Anthropic(api_key=api_key)
         message = await asyncio.to_thread(
             client.messages.create,
             model="claude-opus-4-8",
             max_tokens=4096,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             tools=[STRATEGY_TOOL],
             tool_choice={"type": "tool", "name": "strategy_output"},
             messages=[{"role": "user", "content": prompt}],

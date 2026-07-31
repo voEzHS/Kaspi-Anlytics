@@ -6,8 +6,12 @@ from sqlalchemy import select, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.models import AppSettings, DeptEnum, KaspiRow
+from app.models.models import DeptEnum, KaspiRow
 from app.analytics import engine
+# "Our brands" logic lives in one place — app/routers/settings.py — and is
+# imported here rather than duplicated, so it can't silently drift out of
+# sync with what the Settings UI shows/edits.
+from app.routers.settings import get_our_brands as _get_our_brands
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 
@@ -25,17 +29,6 @@ def _month_sort_key(m: str) -> tuple:
     year = int(parts[1]) if len(parts) > 1 else 0
     idx = MONTH_ORDER.index(month_name) if month_name in MONTH_ORDER else 99
     return (year, idx)
-
-
-_MANDATORY_BRANDS: set[str] = {"AOLIEGE", "FRIGGIER", "LEADBROS", "XINGX", "MUXXED"}
-
-
-async def _get_our_brands(db: AsyncSession) -> set[str]:
-    row = await db.execute(select(AppSettings).where(AppSettings.key == "our_brands"))
-    setting = row.scalar_one_or_none()
-    if setting and setting.value:
-        return {b.strip().upper() for b in setting.value} | _MANDATORY_BRANDS
-    return _MANDATORY_BRANDS
 
 
 def _validate_department(department: str) -> "DeptEnum":

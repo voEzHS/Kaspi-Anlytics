@@ -1157,7 +1157,11 @@ const CATALOG_VIEWS=[
   {id:'products', label:'Товары',      icon:'ti-packages'},
   {id:'abc',      label:'ABC-анализ',  icon:'ti-chart-pie'},
 ];
-if(!window._brands) window._brands=new Set(['AOLIEGE','FRIGGIER','LEADBROS','XINGX','MUXXED']);
+// Populated for real from GET /settings/ in renderSettings() below — the
+// backend always returns the DB list merged with the mandatory brands, so
+// there's no hardcoded brand list here anymore (that's what let BACKERCRAFT
+// silently fall out of the admin's brand-tag editor in July 2026).
+if(!window._brands) window._brands=new Set();
 
 // ── HELPERS ──
 function dc(){return (DMAP[A.dept]||DMAP.frz).chart}
@@ -3001,7 +3005,9 @@ async function _doUpload(file){
 
 // ── SETTINGS ──
 async function renderSettings(){
-  try{const d=await apig('/settings/');if(d.our_brands){const mb=['AOLIEGE','FRIGGIER','LEADBROS','XINGX','MUXXED'];window._brands=new Set([...d.our_brands.map(b=>b.toUpperCase()),...mb]);}}catch{}
+  // Backend already returns our_brands merged with the mandatory set (see
+  // settings.py get_settings) — no need to re-union with a hardcoded list here.
+  try{const d=await apig('/settings/');if(d.our_brands){window._brands=new Set(d.our_brands.map(b=>b.toUpperCase()));}}catch{}
   renderBT();
   // AI-генератор стратегии живёт только в разделе Приоритеты (ctx='tc'/'company') —
   // здесь больше нет своей копии панели, см. loadAIVetkaOptions/_loadCachedAI там.

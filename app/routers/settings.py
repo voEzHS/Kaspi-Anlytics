@@ -20,11 +20,18 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 BASIC_AUTH_USER = os.getenv("BASIC_AUTH_USER", "torgstore")
 
 DEFAULTS = {
-    "our_brands": ["AOLIEGE", "FRIGGIER", "LEADBROS", "XINGX", "MUXXED"],
+    "our_brands": ["AOLIEGE", "FRIGGIER", "LEADBROS", "XINGX", "MUXXED", "BACKERCRAFT"],
 }
 
-# Brands that are ALWAYS ours regardless of DB settings
-MANDATORY_BRANDS: set[str] = {"AOLIEGE", "FRIGGIER", "LEADBROS", "XINGX", "MUXXED"}
+# Brands that are ALWAYS ours regardless of DB settings.
+# Single source of truth — app/routers/analytics.py and app/routers/ai_router.py
+# import get_our_brands() from here instead of keeping their own copy of this
+# set, so adding/removing a mandatory brand only ever needs to happen in one
+# place. (Previously this constant was duplicated in 5 places across the repo,
+# which is how BACKERCRAFT ended up missing from calculations in July 2026 —
+# it had been added to the DB-configurable list in one spot but the app was
+# actually reading from a stale copy elsewhere.)
+MANDATORY_BRANDS: set[str] = {"AOLIEGE", "FRIGGIER", "LEADBROS", "XINGX", "MUXXED", "BACKERCRAFT"}
 
 
 class SettingsPayload(BaseModel):
@@ -47,6 +54,21 @@ async def require_admin(request: Request, x_admin_token: Optional[str] = Header(
         raise HTTPException(403, "Неверный пароль администратора")
 
 
+async def get_our_brands(db: AsyncSession) -> set[str]:
+    """Single source of truth for 'our brands' used in every calculation.
+
+    Always the DB-configured list unioned with MANDATORY_BRANDS, so mandatory
+    brands can never be dropped even if someone removes them via the Settings
+    UI. Imported by analytics.py and ai_router.py — do not re-implement this
+    logic locally in another router.
+    """
+    result = await db.execute(select(AppSettings).where(AppSettings.key == "our_brands"))
+    setting = result.scalar_one_or_none()
+    if setting and setting.value:
+        return {b.strip().upper() for b in setting.value} | MANDATORY_BRANDS
+    return set(MANDATORY_BRANDS)
+
+
 @router.get("/")
 async def get_settings(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(AppSettings))
@@ -54,6 +76,10 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
     data = {**DEFAULTS}
     for r in rows:
         data[r.key] = r.value
+    # Always reflect the brand list actually used in calculations (DB ∪
+    # mandatory) so the Settings UI never edits/displays a stale list that
+    # has drifted from what get_our_brands() returns everywhere else.
+    data["our_brands"] = sorted({b.strip().upper() for b in data.get("our_brands", [])} | MANDATORY_BRANDS)
     return data
 
 
