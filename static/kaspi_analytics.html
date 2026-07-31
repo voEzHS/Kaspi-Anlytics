@@ -75,6 +75,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .landing-dept-empty{font-size:12px;color:var(--muted)}
 /* IA-аудит июль 2026, Фаза 3: статус ОК/Внимание/Критично на стартовом экране */
 .landing-status-badge{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;text-transform:uppercase;letter-spacing:.3px}
+/* 29.07: "Лидер рынка" — независимый бейдж рядом со статусом, не вместо него */
+.landing-badge-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .landing-row-chevron{color:var(--muted);font-size:16px;flex-shrink:0;transition:transform .2s var(--ease-out)}
 .landing-row.expanded .landing-row-chevron{transform:rotate(90deg)}
 .landing-subtypes{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)}
@@ -1821,13 +1823,23 @@ async function initLanding(){
       // текущий период — неотличимо друг от друга. Тянем список загрузок, чтобы
       // различить эти два случая явным текстом.
       apig('/uploads/?department='+d.api).catch(()=>[]),
+      // 29.07: наш ранг нужен отдельно от computeDeptScore — операционный
+      // статус (рейтинг/отзывы/ABC-A) и факт лидерства по выручке это два
+      // разных сигнала, их нельзя схлопывать в один цвет badge'а.
+      apig('/analytics/intelligence?department='+d.api).catch(()=>null),
     ]))
   );
   list.innerHTML = DEPTS.map((d,i) => {
-    const [ov, vt, st, uploads] = results[i];
+    const [ov, vt, st, uploads, intel] = results[i];
     const hasData = ov && ov.total_revenue > 0;
     const neverLaunched = !uploads || uploads.length===0;
     const stat = hasData ? computeDeptScore(ov, vt?.vetka||[], st||{}) : null;
+    // Лидер рынка — отдельный, самостоятельный сигнал, а не подмена статуса
+    // операционного здоровья. 44.6% доли и #1 место по выручке — это факт,
+    // который надо видеть на стартовом экране, даже если у отдела всё ещё
+    // хватает пробелов (мало отзывов/ABC-A и т.п.) и статус остаётся
+    // "Внимание" — одно другому не противоречит.
+    const isLeader = hasData && intel?.market_position?.our_rank === 1;
     const emptyMsg = neverLaunched
       ? 'Отдел ещё не запущен — данные не загружались'
       : 'Данные загружены, но не за текущий период';
@@ -1836,7 +1848,10 @@ async function initLanding(){
         <div class="landing-dept-ic" style="background:${drgba(d.code,.15)};color:${dcolor(d.code)}"><i class="ti ti-${d.icon}"></i></div>
         <div class="landing-row-info">
           <div class="landing-dept-label">${d.label}</div>
-          ${stat ? statusBadgeHtml(stat) : ''}
+          <div class="landing-badge-row">
+            ${isLeader ? `<span class="landing-status-badge" style="background:var(--purple)1f;color:var(--purple)"><i class="ti ti-crown" style="font-size:11px"></i>Лидер рынка</span>` : ''}
+            ${stat ? statusBadgeHtml(stat) : ''}
+          </div>
           ${hasData ? `
             <div class="landing-dept-kpis">
               <div><span class="ldk-v">${fmtR(ov.total_revenue)}</span><span class="ldk-l">рынок</span></div>
