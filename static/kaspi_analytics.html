@@ -1208,11 +1208,29 @@ function computeDeptScore(ov, vetkaArr, st){
     {label:'Покрытие веток',pts:_s4,max:20,hint:`${vetkaWithUs.length}/${vetkaTotal}`},
     {label:'Отзывы',pts:_s5,max:15,hint:`${Math.round(reviewCoverage*100)}%`},
   ];
-  const color=score>=70?'var(--green)':score>=40?'var(--yellow)':'var(--red)';
-  const label=score>=70?'Сильная позиция':score>=40?'Есть потенциал':'Критично — нужны действия';
-  const statusClass=score>=70?'good':score>=40?'warn':'danger';
-  const statusIcon=score>=70?'ti-circle-check':score>=40?'ti-alert-triangle':'ti-alert-circle';
-  const statusText=score>=70?'ОК':score>=40?'Внимание':'Критично';
+
+  // ── Доля рынка — стратегический гейт, а не просто одна из пяти составляющих. ──
+  // До 29.07 итоговый статус считался ТОЛЬКО по сумме очков — из-за этого отдел
+  // с долей 44.6% (сильная выручка, но новый отдел — мало отзывов/ABC-A/веток)
+  // и отдел с долей 10.2% (стабильный, но далеко от цели захвата рынка) оба
+  // попадали в один и тот же жёлтый статус "Внимание", что не имеет смысла —
+  // это две принципиально разные проблемы. Цель компании — доминировать в
+  // рынке, а не просто хорошо выглядеть по вторичным метрикам, поэтому доля
+  // рынка ниже 15% теперь всегда «Критично», независимо от остальных
+  // четырёх составляющих: хороший рейтинг и отзывы не компенсируют то, что
+  // рынок практически не захвачен. От 15% и выше действует полная формула,
+  // как раньше.
+  let color, label, statusClass, statusIcon, statusText;
+  if(ourShare<15){
+    color='var(--red)'; label='Критично — доля рынка далека от цели захвата рынка';
+    statusClass='danger'; statusIcon='ti-alert-circle'; statusText='Критично';
+  }else{
+    color=score>=70?'var(--green)':score>=40?'var(--yellow)':'var(--red)';
+    label=score>=70?'Сильная позиция':score>=40?'Есть потенциал':'Критично — нужны действия';
+    statusClass=score>=70?'good':score>=40?'warn':'danger';
+    statusIcon=score>=70?'ti-circle-check':score>=40?'ti-alert-triangle':'ti-alert-circle';
+    statusText=score>=70?'ОК':score>=40?'Внимание':'Критично';
+  }
   return {score, breakdown, color, label, statusClass, statusIcon, statusText};
 }
 function statusBadgeHtml(stat){
