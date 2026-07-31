@@ -56,22 +56,44 @@ def _vetka_lower_bound(vetka: str) -> int:
     return int(m.group()) if m else 0
 
 
+_TABLETOP_RE = re.compile(r"настольн", re.IGNORECASE)
+
+
 def apply_business_rules(rows: list[dict]) -> list[dict]:
     """
-    Global business rules applied before any analytics calculation.
+    Global business rules applied before any analytics calculation. This is
+    the single choke point used by every analytics endpoint (see _fetch_rows
+    in analytics.py) and by the AI strategy router — a rule added here
+    applies everywhere (all tabs, all dashboards, AI context) with no risk
+    of a dashboard being missed.
 
     Rule 1 — Ларь minimum volume:
         For chest-freezer ("Ларь") products, only include rows whose
         vetka (liter range) starts at 400 L or above.
         Rationale: sub-400 L chest freezers are a different product class
         and distort category analytics.
+
+    Rule 2 — Ice maker tabletop exclusion:
+        For ice makers ("Льдогенератор"), exclude tabletop units entirely.
+        Ice makers have no structured subtype field yet (тип is always
+        "Льдогенератор") — tabletop vs floor-standing only shows up in the
+        product name, e.g. "Настольный льдогенератор ...". Matched via
+        substring on "настольн" (case-insensitive) rather than a strict
+        prefix, since it's free text.
+        Rationale (per business owner, July 2026): tabletop units are a
+        consumer/home-segment product, not the commercial floor-standing
+        equipment TorgStore actually sells — including them skews revenue,
+        market share and the кг/сутки (production capacity) segmentation.
     """
     result = []
     for r in rows:
-        tip = (r.get("tip") or "").strip()
-        if tip.lower() == "ларь":
+        tip = (r.get("tip") or "").strip().lower()
+        if tip == "ларь":
             lb = _vetka_lower_bound(r.get("vetka") or "")
             if lb < 400:
+                continue
+        if tip == "льдогенератор":
+            if _TABLETOP_RE.search(r.get("name") or ""):
                 continue
         result.append(r)
     return result
