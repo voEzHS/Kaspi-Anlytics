@@ -66,6 +66,10 @@ _TABLETOP_RE = re.compile(r"настольн", re.IGNORECASE)
 # — only the mid-period export artifact described in Rule 3 below.
 _MIDPERIOD_SNAPSHOT_RE = re.compile(r"^[а-яё]+\s+\d{1,2}'?$", re.IGNORECASE)
 
+# Тип values that do NOT belong in the "refrigerated" (Холод. витрины)
+# department — see Rule 4 below. Lowercased for case-insensitive matching.
+_NON_VITRINA_TYPES = {"боета", "бонета", "винный шкаф", "ларь", "холодильник", "шкаф"}
+
 
 def apply_business_rules(rows: list[dict]) -> list[dict]:
     """
@@ -118,6 +122,23 @@ def apply_business_rules(rows: list[dict]) -> list[dict]:
         catch-all (any unrecognized month token, not just "Пар") so any
         future one-off typo of this kind is excluded automatically instead
         of requiring another manual patch.
+
+    Rule 4 — Non-vitrina types excluded from "refrigerated" department (01.08):
+        The "refrigerated" (Холод. витрины) department is meant to hold only
+        genuine commercial display cases. The brand-based extraction from
+        Kaspi's general "Холодильник" category (per business owner request,
+        31.07) pulled in some rows whose тип is actually a different
+        equipment class entirely — "Боета"/"Бонета" (chest-freezer subtypes
+        that belong to the "freezers" department instead — see DeptEnum),
+        "Ларь" (chest freezer), "Винный шкаф" (wine cabinet), "Холодильник"
+        (generic fridge, not a display case), "Шкаф" (generic cabinet).
+        Per business owner (01.08), these are excluded entirely from the
+        refrigerated department's analytics — they're a different product
+        class, not a mis-labeled display case. Scoped strictly to
+        department == "refrigerated" so it does NOT touch the same тип
+        strings when they're legitimate elsewhere (e.g. "Ларь" in
+        "freezers" is still governed only by Rule 1's 400L threshold, and
+        "Бонета" in "freezers" is untouched).
     """
     result = []
     for r in rows:
@@ -129,6 +150,8 @@ def apply_business_rules(rows: list[dict]) -> list[dict]:
         if tip == "льдогенератор":
             if _TABLETOP_RE.search(r.get("name") or ""):
                 continue
+        if (r.get("department") or "") == "refrigerated" and tip in _NON_VITRINA_TYPES:
+            continue
         month = str(r.get("month") or "").strip()
         if month:
             if _MIDPERIOD_SNAPSHOT_RE.match(month):

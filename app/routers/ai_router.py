@@ -489,7 +489,7 @@ async def generate_report(
              "units": r.units or 0, "abc": r.abc, "rating": r.rating or 0,
              "reviews": r.reviews or 0, "sellers": r.sellers or 0, "month": r.month,
              "kod": r.kod or "", "name": r.name or "", "rrc": r.rrc or 0,
-             "volume": r.volume}
+             "volume": r.volume, "department": department}
             for r in rows
         ])
     except Exception as e:

@@ -59,6 +59,7 @@ async def _fetch_rows(
             "rrc": r.rrc or 0, "units": r.units or 0, "revenue": r.revenue or 0,
             "abc": r.abc, "sellers": r.sellers or 0,
             "rating": r.rating or 0, "reviews": r.reviews or 0,
+            "department": department,
         }
         for r in rows
     ]
@@ -290,6 +291,13 @@ async def get_subtypes(
     )
     result = await db.execute(q)
     subtypes = sorted(r[0] for r in result.all())
+    # This bypasses apply_business_rules (it's a raw distinct query, not
+    # row-level), so Rule 4's non-vitrina-type exclusion has to be mirrored
+    # here explicitly — otherwise excluded types like "Боета"/"Ларь" would
+    # still show up as selectable filter chips even though selecting them
+    # returns empty analytics everywhere else.
+    if department == "refrigerated":
+        subtypes = [s for s in subtypes if s.strip().lower() not in engine._NON_VITRINA_TYPES]
     return {"subtypes": subtypes}
 
 
