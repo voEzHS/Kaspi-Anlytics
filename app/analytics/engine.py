@@ -58,6 +58,14 @@ def _vetka_lower_bound(vetka: str) -> int:
 
 _TABLETOP_RE = re.compile(r"настольн", re.IGNORECASE)
 
+# Matches a month string that's a word followed by a trailing 1-2 digit
+# number (with or without a dangling apostrophe) — e.g. "Июнь 15'",
+# "июнь 15", "Июль 20'". Deliberately capped at 2 digits (day-of-month
+# range, 1-31) rather than any \d+, so this does NOT match the legitimate
+# "<Месяц> <ГГГГ>" year-suffixed format used elsewhere (e.g. "Январь 2026")
+# — only the mid-period export artifact described in Rule 3 below.
+_MIDPERIOD_SNAPSHOT_RE = re.compile(r"^[а-яё]+\s+\d{1,2}'?$", re.IGNORECASE)
+
 
 def apply_business_rules(rows: list[dict]) -> list[dict]:
     """
@@ -84,6 +92,32 @@ def apply_business_rules(rows: list[dict]) -> list[dict]:
         consumer/home-segment product, not the commercial floor-standing
         equipment TorgStore actually sells — including them skews revenue,
         market share and the кг/сутки (production capacity) segmentation.
+
+    Rule 3 — Duplicate mid-month snapshot exclusion (01.08):
+        Some Kaspi export files include a SECOND, partial pull for a month
+        taken mid-period — observed as month == "Июнь 15'" across multiple
+        independent source files (Морозильники "по типам", Матрица Холод
+        ветрины) and confirmed by row-level kod matching: every single
+        "Июнь 15'" row is the SAME product as its "Июнь" counterpart with
+        strictly lower units/revenue — a partial snapshot of the same
+        period, not a distinct month. Counting both as if they were
+        independent months double-counts June and produces a bogus extra
+        bar in every Тренды chart between May and June. Matched structurally
+        (any "<месяц> <число>'?" string) rather than hardcoding "июнь 15'"
+        specifically, since the export tool that produces this isn't
+        specific to June and could resurface for any month.
+
+        Also excludes rows whose month value doesn't resolve to any
+        recognized calendar month at all — e.g. a single stray "Пар" row
+        found in Матрица Холод ветрины (kod=132720762, AVANGARD LC-1200FS),
+        almost certainly a corrupted/mistyped export label (values are close
+        to, but not identical to, that same SKU's legitimate "Март" row).
+        Since it can't be confidently merged into any specific month, and a
+        garbled month string otherwise renders as its own bogus bar in
+        Тренды, it's dropped rather than guessed at. This is a general
+        catch-all (any unrecognized month token, not just "Пар") so any
+        future one-off typo of this kind is excluded automatically instead
+        of requiring another manual patch.
     """
     result = []
     for r in rows:
@@ -94,6 +128,13 @@ def apply_business_rules(rows: list[dict]) -> list[dict]:
                 continue
         if tip == "льдогенератор":
             if _TABLETOP_RE.search(r.get("name") or ""):
+                continue
+        month = str(r.get("month") or "").strip()
+        if month:
+            if _MIDPERIOD_SNAPSHOT_RE.match(month):
+                continue
+            month_word = month.split()[0].lower()
+            if month_word not in _MONTH_IDX and month_word[:3] not in _MONTH_IDX:
                 continue
         result.append(r)
     return result
