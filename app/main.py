@@ -1,10 +1,12 @@
 import base64
+import hashlib
 import hmac
 import os
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -171,6 +173,59 @@ def _load_basic_auth_users() -> dict:
 
 BASIC_AUTH_USERS = _load_basic_auth_users()
 
+# ── Session cookie (01.08) ──────────────────────────────────────────────────
+# Root cause of the recurring "снова бесконечная авторизация" reports: the
+# SPA's initLanding() fires ~20 parallel fetch() calls (5 endpoints × 4
+# departments) the instant the page loads. HTTP Basic Auth credentials are
+# supposed to be cached by the browser and silently reattached to every
+# subsequent request to the origin, but real browsers are flaky about doing
+# this reliably when a *burst* of simultaneous requests races the very first
+# challenge/response handshake — some of the 20 requests go out before the
+# browser has finished caching credentials from the first 401, each of those
+# gets its own 401 back, and the browser re-prompts. The 29.07 fix exempted
+# one specific route (POST /uploads/) that hit this same underlying flakiness,
+# but that was patching one symptom, not the cause — any other endpoint could
+# (and, per this report, does) hit it too.
+#
+# Fix: after the first successful Basic Auth on any request, issue a signed
+# session cookie. Cookies do not have this reattachment flakiness — the
+# browser attaches them to every request unconditionally. All of the SPA's
+# subsequent fetch() calls (however many, however parallel) authenticate via
+# that cookie instead of depending on the Authorization header being resent,
+# which removes the race entirely rather than exempting more routes one at a
+# time as new ones get hit.
+SESSION_COOKIE_NAME = "kaspi_sess"
+SESSION_MAX_AGE_SEC = 60 * 60 * 24  # 24h
+
+
+def _session_secret() -> str:
+    # No dedicated secret is provisioned for this — reuse ADMIN_PASSWORD
+    # (already a server-only secret) rather than requiring a new env var.
+    # If ADMIN_PASSWORD is unset, BASIC_AUTH_USERS is empty and this whole
+    # middleware short-circuits below, so this value is never used.
+    return ADMIN_PASSWORD or "dev-secret"
+
+
+def _make_session_cookie(username: str) -> str:
+    expiry = int(time.time()) + SESSION_MAX_AGE_SEC
+    payload = f"{username}:{expiry}"
+    sig = hmac.new(_session_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}:{sig}"
+
+
+def _verify_session_cookie(cookie_val: str) -> Optional[str]:
+    try:
+        username, expiry_s, sig = cookie_val.split(":", 2)
+        expiry = int(expiry_s)
+    except (ValueError, AttributeError):
+        return None
+    if expiry < int(time.time()):
+        return None
+    expected_sig = hmac.new(_session_secret().encode(), f"{username}:{expiry}".encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected_sig):
+        return None
+    return username if username in BASIC_AUTH_USERS else None
+
 
 @app.middleware("http")
 async def basic_auth_middleware(request: Request, call_next):
@@ -191,6 +246,16 @@ async def basic_auth_middleware(request: Request, call_next):
     if request.url.path == "/health" or not BASIC_AUTH_USERS:
         return await call_next(request)
 
+    # Session-cookie fast path — see note above. Checked before the
+    # Authorization header so an already-logged-in browser never has to
+    # depend on Basic-Auth-header reattachment at all.
+    cookie_val = request.cookies.get(SESSION_COOKIE_NAME)
+    if cookie_val:
+        cookie_user = _verify_session_cookie(cookie_val)
+        if cookie_user:
+            request.state.basic_auth_user = cookie_user
+            return await call_next(request)
+
     auth_header = request.headers.get("Authorization", "")
     if auth_header.lower().startswith("basic "):
         # Real credentials were presented (right or wrong) — a 401 from here
@@ -207,7 +272,16 @@ async def basic_auth_middleware(request: Request, call_next):
                 # can recognize the admin account without asking for the same
                 # password a second time via the in-app x-admin-token modal.
                 request.state.basic_auth_user = username
-                return await call_next(request)
+                response = await call_next(request)
+                response.set_cookie(
+                    SESSION_COOKIE_NAME,
+                    _make_session_cookie(username),
+                    max_age=SESSION_MAX_AGE_SEC,
+                    httponly=True,
+                    samesite="lax",
+                    secure=True,
+                )
+                return response
         except Exception:
             pass
 
