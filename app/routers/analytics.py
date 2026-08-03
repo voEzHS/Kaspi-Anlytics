@@ -26,7 +26,17 @@ def _month_sort_key(m: str) -> tuple:
     """Sort months chronologically: year first, then month index within year."""
     parts = m.split()
     month_name = parts[0] if parts else m
-    year = int(parts[1]) if len(parts) > 1 else 0
+    # parts[1] isn't always a clean year — contaminated exports can leave
+    # artifacts like "Июнь 15'" in the raw DB rows (filtered out of actual
+    # analytics by engine.apply_business_rules, but this function is also
+    # used by /months, a raw DISTINCT query that never goes through that
+    # filter). int("15'") raises ValueError and 500s the endpoint — found
+    # via full-site numbers audit, 03.08.2026. Default to year=0 instead of
+    # crashing; the entry gets filtered out below anyway.
+    try:
+        year = int(parts[1]) if len(parts) > 1 else 0
+    except ValueError:
+        year = 0
     idx = MONTH_ORDER.index(month_name) if month_name in MONTH_ORDER else 99
     return (year, idx)
 
@@ -274,7 +284,21 @@ async def get_months(
         KaspiRow.month != "",
     ).order_by(KaspiRow.month)
     result = await db.execute(q)
-    months = sorted((r[0] for r in result.all()), key=_month_sort_key)
+    raw_months = [r[0] for r in result.all()]
+    # Same bypass problem as /subtypes: raw DISTINCT query never goes
+    # through engine.apply_business_rules, so contaminated month strings
+    # ("Июнь 15'", "Пар") would otherwise show up as selectable options
+    # even though they're excluded from every actual calculation.
+    clean_months = []
+    for m in raw_months:
+        mm = (m or "").strip()
+        if not mm or engine._MIDPERIOD_SNAPSHOT_RE.match(mm):
+            continue
+        word = mm.split()[0].lower()
+        if word not in engine._MONTH_IDX and word[:3] not in engine._MONTH_IDX:
+            continue
+        clean_months.append(m)
+    months = sorted(clean_months, key=_month_sort_key)
     return {"months": months}
 
 
