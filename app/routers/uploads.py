@@ -580,6 +580,67 @@ async def backfill_names(
     }
 
 
+@router.post("/self-heal-names", summary="Fix name==kod rows using names already present elsewhere in the same department")
+async def self_heal_names(
+    department: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(require_admin),
+):
+    """
+    Found via full-site numbers audit (03.08.2026): freezers has ~664 rows
+    where name == kod (old column-mapping bug, pre-fix uploads) — but for
+    MOST of those kods, a later/other month's row for the SAME kod already
+    has the real product name (e.g. kod 135246793: "Июнь 2026" row has
+    "Friggier J SD365BY 365 л серый", but "Май" row has name=="135246793").
+    dedup_skus() just keeps whichever row it sees first, so the bad name
+    can surface even though a good one exists in the same table.
+
+    This avoids re-uploading a source file (backfill-names above) — it
+    heals purely from the department's own already-ingested rows, so it's
+    guaranteed complete for every kod that has a real name ANYWHERE in its
+    history, not just whatever happens to be in one re-uploaded file.
+    """
+    if department not in DeptEnum.__members__:
+        raise HTTPException(400, f"Unknown department: {department}")
+    dept = DeptEnum[department]
+
+    result = await db.execute(
+        select(KaspiRow.kod, KaspiRow.name).where(
+            KaspiRow.department == dept,
+            KaspiRow.kod.isnot(None),
+            KaspiRow.kod != "",
+            KaspiRow.name.isnot(None),
+            KaspiRow.name != "",
+        )
+    )
+    name_by_kod: dict[str, str] = {}
+    for kod, name in result.all():
+        name = (name or "").strip()
+        kod = (kod or "").strip()
+        if name and name != kod:
+            name_by_kod[kod] = name
+
+    if not name_by_kod:
+        return {"department": department, "rows_updated": 0,
+                "note": "No rows with a real (non-kod) name found to heal from."}
+
+    result = await db.execute(select(KaspiRow).where(KaspiRow.department == dept))
+    rows = result.scalars().all()
+    updated = 0
+    for row in rows:
+        k = (row.kod or "").strip()
+        if k in name_by_kod and (not row.name or row.name.strip() == "" or row.name.strip() == k):
+            row.name = name_by_kod[k]
+            updated += 1
+
+    await db.commit()
+    return {
+        "department": department,
+        "kods_with_known_good_name": len(name_by_kod),
+        "rows_updated": updated,
+    }
+
+
 @router.get("/", summary="List uploads")
 async def list_uploads(
     department: Optional[str] = None,
