@@ -1697,3 +1697,155 @@ def calc_sku_history(rows: list[dict], kod: str = "", name: str = "") -> dict:
         "vetka": rep.get("vetka"),
         "months": series,
     }
+
+
+# ── Закуп (05.08.2026) ────────────────────────────────────────────────────────
+# Перенос логики ручного директорского плана закупа (Plan_Zakupa_Prioritety) на
+# сайт — только механическая часть (покрытие складом, тир T1-T4). Директорские
+# поправки, которые в ручном файле требовали живой проверки в CRM конкретных
+# SKU (скрытый сток ремонт/уценка/возврат/витрина) или ручного суждения —
+# сюда НЕ перенесены, это осталось бы непроверенным автоматическим решением.
+# Вместо жёстко зашитых категорий (Гастрономы/Фризеры для мороженого по имени)
+# — два ОБЩИХ флага ниже, которые сработают на любую похожую категорию сами,
+# без необходимости заново находить и чинить конкретный кейс каждый раз:
+#   • made_to_order_group  — у категории (Тип) почти нет физического стока
+#     ни у одного SKU → похоже на "под заказ", coverage-логика неприменима.
+#   • dead_signal          — последний загруженный месяц = 0 продаж на Kaspi,
+#     хотя раньше SKU продавался. Это МЕСЯЧНОЕ разрешение (сайт хранит только
+#     помесячные продажи, не понедельные, как в ручном разборе фризеров) —
+#     грубее, но честно помечено, не выдаётся за то же самое.
+# ВАЖНО: сайт видит продажи только по Kaspi (загружаемые Excel — это Kaspi-
+# экспорт). В отличие от ручного плана здесь НЕТ данных о продажах на других
+# каналах — T3a ("сток есть, но не продаётся на Kaspi") здесь не может
+# подтвердить/опровергнуть спрос на других каналах, только показать сам факт.
+
+TARGET_MONTHS_COVER = 2.0          # тот же буфер, что и в ручном плане закупа
+_TRAILING_MONTHS = 3               # окно для средней скорости продаж (mvel)
+_MADE_TO_ORDER_MIN_GROUP = 3       # минимум SKU в группе, чтобы флаг не был шумом
+_MADE_TO_ORDER_ZERO_STOCK_SHARE = 0.8  # доля SKU группы с нулевым физ. стоком
+
+
+def _procurement_classify(mvel_kaspi: float, kaspi_stock: float, ymc_transit: float, ordered: float):
+    has_pipe = (ordered or 0) > 0 or (ymc_transit or 0) > 0
+    selling = mvel_kaspi >= 1.0
+    cover = safe_div(kaspi_stock, mvel_kaspi, None) if mvel_kaspi > 0 else None
+    cover_full = safe_div(kaspi_stock + ymc_transit + ordered, mvel_kaspi, None) if mvel_kaspi > 0 else None
+    if selling and cover is not None and cover < TARGET_MONTHS_COVER:
+        tier = "T1_CRITICAL" if not has_pipe else "T2_PIPELINE"
+        if has_pipe and cover_full is not None and cover_full < TARGET_MONTHS_COVER:
+            tier = "T1_CRITICAL"
+    elif selling:
+        tier = "T4_OK"
+    else:
+        tier = "T3A_LISTING" if kaspi_stock > 0 else ("T2_PIPELINE" if has_pipe else "T3B_LOWPRI")
+    return tier, cover, cover_full
+
+
+def calc_procurement(rows: list[dict], stock_rows: list[dict]) -> dict:
+    """
+    rows: ВСЕ месяцы продаж этого отдела (после apply_business_rules) — нужна
+          история за несколько месяцев, а не один выбранный месяц.
+    stock_rows: [{sku,name,status,price,wh_pervomay,wh_astana,wh_shymkent,
+          wh_tuzdybastau,ymc_transit,ordered}, ...] из StockRow (не привязаны
+          к отделу — сопоставление по SKU происходит здесь).
+    """
+    if not rows:
+        return {"items": [], "made_to_order_groups": [], "no_stock_data": [],
+                "months_used": [], "note": "Нет загруженных продаж для этого отдела."}
+
+    months_avail = sorted({r["month"] for r in rows if r.get("month")}, key=_month_sort_key)
+    months_used = months_avail[-_TRAILING_MONTHS:]
+    latest_month = months_used[-1] if months_used else None
+    n_months = len(months_used) or 1
+
+    stock_by_sku: dict[str, dict] = {}
+    for s in stock_rows:
+        k = str(s.get("sku") or "").strip().upper()
+        if k:
+            stock_by_sku[k] = s
+
+    # units per SKU per month (только окно months_used) + метаданные (name/tip)
+    per_sku: dict[str, dict] = {}
+    for r in rows:
+        k = sku_key(r)
+        if k == "__UNKNOWN__":
+            continue
+        d = per_sku.setdefault(k, {"months": defaultdict(float), "name": r.get("name"), "tip": r.get("tip"),
+                                    "kod": r.get("kod") or k, "_last_rev": -1})
+        if (r.get("revenue") or 0) >= d["_last_rev"]:
+            d["name"] = r.get("name") or d["name"]
+            d["tip"] = r.get("tip") or d["tip"]
+            d["_last_rev"] = r.get("revenue") or 0
+        if r.get("month") in months_used:
+            d["months"][r["month"]] += r.get("units") or 0
+
+    items = []
+    no_stock_data = []
+    tip_groups: dict[str, list] = defaultdict(list)
+
+    for k, d in per_sku.items():
+        total_units = sum(d["months"].values())
+        mvel_kaspi = total_units / n_months
+        latest_units = d["months"].get(latest_month, 0) if latest_month else 0
+        earlier_units = total_units - latest_units
+
+        st = stock_by_sku.get(k)
+        if st is None:
+            no_stock_data.append({"kod": d["kod"], "name": d["name"], "tip": d["tip"],
+                                   "mvel_kaspi": round(mvel_kaspi, 2)})
+            continue
+
+        kaspi_stock = (st.get("wh_pervomay") or 0) + (st.get("wh_astana") or 0) + (st.get("wh_shymkent") or 0)
+        ymc_transit = st.get("ymc_transit") or 0
+        ordered = st.get("ordered") or 0
+
+        tier, cover, cover_full = _procurement_classify(mvel_kaspi, kaspi_stock, ymc_transit, ordered)
+        need = TARGET_MONTHS_COVER * mvel_kaspi - kaspi_stock - ymc_transit - ordered
+        suggest_qty = max(0, math.ceil(need)) if tier in ("T1_CRITICAL", "T2_PIPELINE") else 0
+
+        # Месячное (не понедельное, как в ручном разборе) приближение "сигнал
+        # пропал": в последнем загруженном месяце — 0 продаж, хотя раньше были.
+        dead_signal = bool(latest_month) and latest_units == 0 and earlier_units > 0 and len(months_used) >= 2
+
+        item = {
+            "kod": d["kod"], "name": d["name"], "tip": d["tip"],
+            "status": st.get("status"),
+            "mvel_kaspi": round(mvel_kaspi, 2),
+            "kaspi_stock": kaspi_stock,
+            "wh_pervomay": st.get("wh_pervomay") or 0, "wh_astana": st.get("wh_astana") or 0,
+            "wh_shymkent": st.get("wh_shymkent") or 0, "wh_tuzdybastau": st.get("wh_tuzdybastau") or 0,
+            "ymc_transit": ymc_transit, "ordered": ordered,
+            "cover_months": round(cover, 1) if cover is not None else None,
+            "tier": tier, "suggest_qty": suggest_qty,
+            "dead_signal": dead_signal,
+        }
+        items.append(item)
+        if d["tip"]:
+            tip_groups[d["tip"]].append(item)
+
+    # made_to_order_group: категория (Тип), где почти весь физ. сток = 0 у
+    # достаточно большой группы SKU — похоже на "под заказ", не на обычный склад.
+    made_to_order_groups = []
+    for tip, group in tip_groups.items():
+        if len(group) < _MADE_TO_ORDER_MIN_GROUP:
+            continue
+        zero_stock = sum(1 for it in group if it["kaspi_stock"] <= 0)
+        share = zero_stock / len(group)
+        if share >= _MADE_TO_ORDER_ZERO_STOCK_SHARE:
+            made_to_order_groups.append({
+                "tip": tip, "sku_count": len(group), "zero_stock_count": zero_stock,
+                "zero_stock_share": round(share, 2),
+            })
+            for it in group:
+                it["made_to_order_group"] = True
+
+    TIER_ORDER = {"T1_CRITICAL": 0, "T2_PIPELINE": 1, "T3A_LISTING": 2, "T3B_LOWPRI": 3, "T4_OK": 4}
+    items.sort(key=lambda it: (TIER_ORDER.get(it["tier"], 9), -it["suggest_qty"], -it["mvel_kaspi"]))
+
+    return {
+        "items": items,
+        "made_to_order_groups": made_to_order_groups,
+        "no_stock_data": sorted(no_stock_data, key=lambda x: -x["mvel_kaspi"])[:50],
+        "months_used": months_used,
+        "counts": {t: sum(1 for it in items if it["tier"] == t) for t in TIER_ORDER},
+    }

@@ -74,6 +74,64 @@ class KaspiRow(Base):
     )
 
 
+class StockUpload(Base):
+    """One uploaded CRM stock export ('Экспорт товаров с надстройками' из
+    torgstore.zymyran.com) = one snapshot. В отличие от Upload (продажи,
+    накопительно по месяцам) остатки НЕ накопительные — это состояние склада
+    "на сейчас". Поэтому при новой загрузке предыдущий снимок полностью
+    удаляется (см. stock.py), а не складывается с новым."""
+    __tablename__ = "stock_uploads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(255), nullable=False)
+    row_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+
+    rows = relationship("StockRow", back_populates="upload", cascade="all, delete-orphan", lazy="select")
+
+
+class StockRow(Base):
+    """Один товар из выгрузки остатков CRM. Не привязан к отделу сайта —
+    сопоставление с отделом происходит по SKU через существующий KaspiRow
+    (см. engine.calc_procurement) на этапе запроса, не при загрузке — так
+    остатки не нужно перезаливать при изменении списка отслеживаемых SKU."""
+    __tablename__ = "stock_rows"
+
+    id = Column(Integer, primary_key=True, index=True)
+    upload_id = Column(Integer, ForeignKey("stock_uploads.id", ondelete="CASCADE"), nullable=False)
+
+    sku = Column(String(100), nullable=False, index=True)
+    name = Column(Text, nullable=True)
+    status = Column(String(100), nullable=True)   # "Продается" | "Стоп лист" | ...
+    price = Column(Float, default=0)
+
+    # Физический сток — 3 продаваемых-на-Kaspi склада (Первомай/Астана/Шымкент),
+    # раздельно (проверено вживую в CRM, см. CRM_Logistika_Sklady.md). Туздыбастау —
+    # запасной, не подтверждено что с него уходят заказы Kaspi напрямую — считаем
+    # отдельно, не суммируем в основной сток.
+    wh_pervomay = Column(Float, default=0)
+    wh_astana = Column(Float, default=0)
+    wh_shymkent = Column(Float, default=0)
+    wh_tuzdybastau = Column(Float, default=0)
+
+    # Пайплайн — НЕ физический сток, товар ещё либо в производстве/пути (сумма
+    # всех прочих столбцов выгрузки — китайские хабы YMC-1(H)/A-GS-CAI/C-GS-XX/...,
+    # состав меняется от выгрузки к выгрузке, поэтому не хардкодим конкретные
+    # коды, а суммируем "всё, что не опознанный физический склад/цена/статус").
+    ymc_transit = Column(Float, default=0)
+    # "2_ordered" из выгрузки — заказано у поставщика. Подтверждено вживую в
+    # CRM (карточка товара → Наличие → SUPPLY CHAIN → 2_ordered) 05.08.2026 —
+    # реальное, живое поле, не сирота. ВАЖНО: CRM сам показывает физический
+    # сток и это поле одной суммой ("Итого") — здесь они намеренно разделены.
+    ordered = Column(Float, default=0)
+
+    upload = relationship("StockUpload", back_populates="rows")
+
+    __table_args__ = (
+        Index("ix_stock_sku", "sku"),
+    )
+
+
 class AppSettings(Base):
     """Key-value settings store."""
     __tablename__ = "app_settings"

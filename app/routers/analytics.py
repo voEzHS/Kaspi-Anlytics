@@ -6,7 +6,7 @@ from sqlalchemy import select, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.models import DeptEnum, KaspiRow
+from app.models.models import DeptEnum, KaspiRow, StockRow
 from app.analytics import engine
 # "Our brands" logic lives in one place — app/routers/settings.py — and is
 # imported here rather than duplicated, so it can't silently drift out of
@@ -395,3 +395,34 @@ async def get_sku_history(
         raise HTTPException(400, "Provide kod or name")
     rows = await _fetch_rows(db, department, month=None, subtype=subtype)
     return engine.calc_sku_history(rows, kod=kod or "", name=name or "")
+
+
+@router.get("/procurement")
+async def get_procurement(
+    department: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Вкладка «Закуп» (05.08.2026) — перенос механической части ручного плана
+    закупа на сайт. Скоуп сознательно ограничен только уже отслеживаемыми на
+    сайте отделами/SKU (см. Замечание в calc_procurement) — это не полный
+    каталог CRM, только приоритетные товары.
+    """
+    rows = await _fetch_rows(db, department, month=None, subtype=None)
+    stock_result = await db.execute(select(StockRow))
+    stock_rows = [
+        {
+            "sku": s.sku, "name": s.name, "status": s.status, "price": s.price,
+            "wh_pervomay": s.wh_pervomay, "wh_astana": s.wh_astana,
+            "wh_shymkent": s.wh_shymkent, "wh_tuzdybastau": s.wh_tuzdybastau,
+            "ymc_transit": s.ymc_transit, "ordered": s.ordered,
+        }
+        for s in stock_result.scalars().all()
+    ]
+    if not stock_rows:
+        return {"items": [], "made_to_order_groups": [], "no_stock_data": [],
+                "months_used": [], "stock_loaded": False,
+                "note": "Остатки не загружены — см. вкладку «Загрузка данных»."}
+    result = engine.calc_procurement(rows, stock_rows)
+    result["stock_loaded"] = True
+    return result
