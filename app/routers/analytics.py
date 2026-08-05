@@ -6,7 +6,7 @@ from sqlalchemy import select, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.models import DeptEnum, KaspiRow, StockRow
+from app.models.models import DeptEnum, KaspiRow, StockRow, ChannelSalesRow
 from app.analytics import engine
 # "Our brands" logic lives in one place — app/routers/settings.py — and is
 # imported here rather than duplicated, so it can't silently drift out of
@@ -424,5 +424,77 @@ async def get_procurement(
                 "months_used": [], "stock_loaded": False,
                 "note": "Остатки не загружены — см. вкладку «Загрузка данных»."}
     result = engine.calc_procurement(rows, stock_rows)
+    result["stock_loaded"] = True
+    return result
+
+
+# Категория CRM ("Категория товара" в выгрузке «Продажи всех каналов") ->
+# отдел сайта, для которого она является "Ядром" охвата в calc_procurement_v2.
+# См. Zakup_V2_Design_2026-08-05.md, раздел 3 — соответствие подтверждено
+# на реальных данных (DEPT_MAP из build_full_v8.py для freezers/refrigerated;
+# ovens/ice_makers — прямое совпадение названия категории с отделом).
+CORE_CRM_CATEGORIES = {
+    "Морозильные бонеты": "freezers",
+    "Коммерческий морозильный ларь": "freezers",
+    "Холодильные шкафы": "refrigerated",
+    "Льдогенераторы": "ice_makers",
+    "Жарочные шкафы": "ovens",
+}
+
+
+@router.get("/procurement-v2")
+async def get_procurement_v2(db: AsyncSession = Depends(get_db)):
+    """
+    Закуп v2 (05.08.2026) — см. Zakup_V2_Design_2026-08-05.md (корень
+    репозитория, 14 разделов, 3 раунда самокритики на реальных данных).
+    В отличие от /procurement (v1): считает по ВСЕМУ каталогу CRM (не
+    только 4 отделам), используя реальную скорость продаж по всем каналам
+    (только розница — опт лумпи, см. документ п.13), реальную сезонность
+    по категории и time-phased буфер на основе подтверждённого лид-тайма.
+    Не департамент-скоуп, а единый ответ на весь каталог с полем "scope"
+    у каждой позиции (core/extended/tail) — фронтенд сам решает, что
+    показывать по умолчанию.
+    """
+    channel_result = await db.execute(select(ChannelSalesRow))
+    channel_rows = [
+        {"sku": r.sku, "name": r.name, "qty": r.qty, "revenue": r.revenue,
+         "sale_date": r.sale_date, "channel": r.channel,
+         "category": r.category, "subgroup": r.subgroup}
+        for r in channel_result.scalars().all()
+    ]
+    stock_result = await db.execute(select(StockRow))
+    stock_rows = [
+        {"sku": s.sku, "name": s.name, "status": s.status, "price": s.price,
+         "wh_pervomay": s.wh_pervomay, "wh_astana": s.wh_astana,
+         "wh_shymkent": s.wh_shymkent, "wh_tuzdybastau": s.wh_tuzdybastau,
+         "ymc_transit": s.ymc_transit, "ordered": s.ordered}
+        for s in stock_result.scalars().all()
+    ]
+
+    if not channel_rows or not stock_rows:
+        return {
+            "items": [], "made_to_order_groups": [], "no_stock_data": [],
+            "months_used": [], "channel_loaded": bool(channel_rows), "stock_loaded": bool(stock_rows),
+            "note": "Нужны обе загрузки — «Остатки» и «Продажи всех каналов» — см. вкладку «Закуп».",
+        }
+
+    # Kaspi-строки ВСЕХ 4 отделов сайта — не для тира, только для сверки
+    # site-Kaspi vs Kaspi-канал нового файла (kaspi_divergence в engine).
+    all_kaspi_rows: list[dict] = []
+    for dept in DeptEnum:
+        all_kaspi_rows.extend(await _fetch_rows(db, dept.value, month=None, subtype=None))
+
+    result = engine.calc_procurement_v2(rows=all_kaspi_rows, stock_rows=stock_rows,
+                                         channel_rows=channel_rows, scope_categories=None)
+
+    active_t1_categories = {it["category"] for it in result["items"] if it["tier"] == "T1_CRITICAL"}
+    scope = engine.calc_category_scope(channel_rows, core_categories=set(CORE_CRM_CATEGORIES),
+                                        active_t1_categories=active_t1_categories)
+    for it in result["items"]:
+        it["scope"] = scope["scope_by_category"].get(it["category"], "tail")
+        it["department"] = CORE_CRM_CATEGORIES.get(it["category"])
+
+    result["scope"] = scope
+    result["channel_loaded"] = True
     result["stock_loaded"] = True
     return result

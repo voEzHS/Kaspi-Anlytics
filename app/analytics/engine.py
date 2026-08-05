@@ -2,6 +2,8 @@
 import math
 import re
 from collections import defaultdict
+from datetime import date
+from typing import Optional
 
 # Canonical month order for chronological sorting
 MONTH_ORDER = [
@@ -1848,4 +1850,385 @@ def calc_procurement(rows: list[dict], stock_rows: list[dict]) -> dict:
         "no_stock_data": sorted(no_stock_data, key=lambda x: -x["mvel_kaspi"])[:50],
         "months_used": months_used,
         "counts": {t: sum(1 for it in items if it["tier"] == t) for t in TIER_ORDER},
+    }
+
+
+# ── Закуп v2 (05.08.2026) ────────────────────────────────────────────────────
+# Дизайн-документ: Zakup_V2_Design_2026-08-05.md (корень репозитория) — 14
+# разделов, включая 3 раунда самокритики с проверкой на реальных данных
+# (119 SKU из ручного плана / 42039 транзакций из выгрузки CRM). Ниже —
+# реализация того, что там согласовано. Ключевые решения (см. документ за
+# цифрами и обоснованием):
+#
+#   1. Розница vs опт — НЕ усредняем в одно число. Опт (Дилеры/Супер-дилеры
+#      Байсат/Айдын Опт/Корпоративные) даёт 46.5% объёма всего каталога, но
+#      лумпи (разовые партии по 20-200 шт — напр. SKU 9309484: 87% объёма
+#      через один канал "Айдын Опт"). Усреднение по 3 мес маскирует чужой
+#      закупочный цикл под "стабильный спрос". Розничный сигнал ведёт
+#      буфер/тир/сезонность; оптовый — отдельный контекст-паттерн.
+#   2. Kaspi-канал ЭТОГО файла vs mvel_kaspi сайта (KaspiRow, отдельная
+#      загрузка Kaspi-матриц) — сверка, не замена: расхождение >20% -> флаг
+#      на карточке, а не молчаливый выбор одного источника (порог не
+#      откалиброван на повторных загрузках — открытый пробел, см. п.14).
+#   3. Тир считается по РОЗНИЧНОМУ mvel, не по Kaspi-only и не по мешанине
+#      с опт — чинит канальную слепоту (см. документ п.12: 76/119 SKU
+#      меняли тир при переходе с Kaspi-only на общий спрос; весь бакет
+#      T3B_LOWPRI из 17 SKU был целиком построен на ложном сигнале).
+#   4. Охват — composite score (выручка категории + гарантия видимости при
+#      живом T1_CRITICAL внутри категории), не чистый ранг по выручке (см.
+#      документ п.11 — чистая выручка прятала бы категории "Рисоварки
+#      профессиональные" и "Слайсеры", где как раз известные T1 SKU).
+#   5. Буфер — TARGET_COVER_DAYS = лид-тайм (45 дней, подтверждено
+#      пользователем 05.08.2026: 30 произв. + 15 логистика до Хаб Первомай)
+#      + периодичность проверки (допущение 15 дней, не измерено) = 60 дней
+#      ≈ 2 мес — то же число, что и в v1 TARGET_MONTHS_COVER, но теперь
+#      обосновано, а не произвольно.
+#   6. Сезонность — по категории CRM, ТОЛЬКО на розничных транзакциях
+#      (иначе те же лумпи-оптовые всплески читаются как "сезонность рынка"
+#      — см. документ п.13).
+#
+# Открытые пробелы, которые НЕ закрыты этим кодом (нужен внешний вход, не
+# ещё один проход по тем же файлам — см. документ п.14): MOQ по SKU/
+# поставщику, себестоимость/маржа, точная дата размещения "2_ordered",
+# плечо Первомай→Астана/Шымкент/Туздыбастау, статус канала "Айдын Опт"
+# (независимый дилер или связанная структура), калибровка порога
+# расхождения Kaspi vs CRM. Помечены как известные ограничения в API-ответе
+# и должны быть видны в UI, а не скрыты.
+
+RETAIL_CHANNELS = {
+    "розничные продажи", "каспи", "каспи - магазин",
+    "tiktok продажи", "tiktok продажи шымкент", "tiktok продажи астана",
+    "инстаграм", "инстаграм шымкент", "инстаграм астана",
+    "магазин шымкент",
+}
+WHOLESALE_CHANNELS = {
+    "дилеры", "супер-дилеры байсат", "айдын опт", "корпоративные продажи",
+    "мастер продаж",
+}
+
+
+def _channel_bucket(channel) -> str:
+    c = (channel or "").strip().lower()
+    if c in RETAIL_CHANNELS:
+        return "retail"
+    if c in WHOLESALE_CHANNELS:
+        return "wholesale"
+    return "other"  # неопознанный канал — не в основном сигнале, но не теряется молча
+
+
+LEAD_TIME_DAYS = 45          # 30 произв. + 15 логистика (Первомай) — подтверждено пользователем 05.08.2026
+REVIEW_CADENCE_DAYS = 15     # допущение о периодичности проверки вкладки — НЕ измерено, см. документ п.14
+TARGET_COVER_DAYS = LEAD_TIME_DAYS + REVIEW_CADENCE_DAYS   # 60 дней ≈ 2.0 мес
+NEAR_PIPELINE_ETA_DAYS = 15  # left_factory + китайские хаб-коды — осталась только логистика
+FAR_PIPELINE_ETA_DAYS = 45   # "ordered" — верхняя граница, дата заказа неизвестна (открытый пробел)
+
+KASPI_DIVERGENCE_THRESHOLD = 0.20   # прикидка, не откалибровано на повторных загрузках — см. документ п.14
+CATEGORY_MATERIALITY_CUM_PCT = 0.90  # топ-категории, дающие 90% суммарной выручки → "Расширенный охват"
+
+
+def calc_category_seasonality(channel_rows: list[dict]) -> dict[str, dict[int, float]]:
+    """
+    Сезонный индекс по категории CRM, ТОЛЬКО по розничным транзакциям (см.
+    обоснование в шапке файла — опт искажает сезонность своим циклом
+    закупок, не сезоном конечного спроса). Индекс месяца = продажи в этом
+    календарном месяце / средние продажи по всем 12 месяцам — 1.0 =
+    типичный месяц, <1 = просадка, >1 = пик.
+
+    Требует данные минимум за 6 разных календарных месяцев на категорию,
+    иначе индекс не считается — недостаточно истории, не натягиваем кривую
+    на шум (см. документ п.5).
+    """
+    retail = [r for r in channel_rows if _channel_bucket(r.get("channel")) == "retail"]
+    by_cat_month: dict[str, dict[int, float]] = defaultdict(lambda: defaultdict(float))
+    cat_months_seen: dict[str, set] = defaultdict(set)
+    for r in retail:
+        d = r.get("sale_date")
+        if not d:
+            continue
+        cat = r.get("category") or ""
+        by_cat_month[cat][d.month] += r.get("qty") or 0
+        cat_months_seen[cat].add((d.year, d.month))
+
+    result: dict[str, dict[int, float]] = {}
+    for cat, by_month in by_cat_month.items():
+        if len(cat_months_seen[cat]) < 6:
+            continue
+        total = sum(by_month.values())
+        avg = total / 12.0
+        if avg <= 0:
+            continue
+        result[cat] = {m: round(by_month.get(m, 0.0) / avg, 2) for m in range(1, 13)}
+    return result
+
+
+def _procurement_classify_v2(mvel_retail, kaspi_stock, near_pipeline, far_pipeline):
+    """
+    Как _procurement_classify (v1), но: (а) вход — розничная скорость
+    продаж, не смешанная с опт; (б) буфер — TARGET_COVER_DAYS (лид-тайм +
+    периодичность проверки), не голые 2 месяца; (в) пайплайн учитывается по
+    стадиям — считается "покрывающим" только если долетит в пределах
+    буфера. При текущих константах (буфер 60д >= обе ETA-стадии) это всегда
+    true, то есть поведение сегодня совпадает с плоским суммированием —
+    стадийность оставлена ради прозрачности расчёта и на случай если буфер
+    когда-то станет короче лид-тайма (см. документ п.14, честно об этом).
+    """
+    mvel_daily = (mvel_retail or 0) / 30.0
+    has_pipe = (near_pipeline or 0) > 0 or (far_pipeline or 0) > 0
+    selling = (mvel_retail or 0) >= 1.0
+
+    days_stock = safe_div(kaspi_stock, mvel_daily, None) if mvel_daily > 0 else None
+
+    covered_pipeline = 0
+    if near_pipeline and NEAR_PIPELINE_ETA_DAYS <= TARGET_COVER_DAYS:
+        covered_pipeline += near_pipeline
+    if far_pipeline and FAR_PIPELINE_ETA_DAYS <= TARGET_COVER_DAYS:
+        covered_pipeline += far_pipeline
+    days_stock_full = safe_div(kaspi_stock + covered_pipeline, mvel_daily, None) if mvel_daily > 0 else None
+
+    if selling and days_stock is not None and days_stock < TARGET_COVER_DAYS:
+        tier = "T1_CRITICAL" if not has_pipe else "T2_PIPELINE"
+        if has_pipe and days_stock_full is not None and days_stock_full < TARGET_COVER_DAYS:
+            tier = "T1_CRITICAL"
+    elif selling:
+        tier = "T4_OK"
+    else:
+        tier = "T3A_LISTING" if kaspi_stock > 0 else ("T2_PIPELINE" if has_pipe else "T3B_LOWPRI")
+
+    cover_months = round(days_stock / 30, 1) if days_stock is not None else None
+    cover_months_full = round(days_stock_full / 30, 1) if days_stock_full is not None else None
+    return tier, cover_months, cover_months_full
+
+
+def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: list[dict],
+                         scope_categories: Optional[set] = None) -> dict:
+    """
+    rows: продажи Kaspi этого отдела из KaspiRow (после apply_business_rules)
+          — используются ТОЛЬКО для сверки с Kaspi-каналом нового файла
+          (kaspi_divergence), не как основной сигнал спроса.
+    stock_rows: как в calc_procurement (v1) — остатки CRM.
+    channel_rows: [{sku,name,qty,revenue,sale_date,channel,category,subgroup},
+          ...] из ChannelSalesRow — ВЕСЬ каталог CRM, не только 4 отдела сайта.
+    scope_categories: если задано — ограничить расчёт этими категориями.
+          При None считается весь каталог (нужно для гарантии видимости
+          категорий с живым T1 в calc_category_scope — см. её docstring).
+    """
+    if not channel_rows:
+        return {"items": [], "made_to_order_groups": [], "no_stock_data": [], "months_used": [],
+                "note": "Файл «Продажи всех каналов» не загружен."}
+
+    _TRAILING_MONTHS = 3
+    all_dates = sorted({(r["sale_date"].year, r["sale_date"].month)
+                         for r in channel_rows if r.get("sale_date")})
+    # Исключаем текущий (незавершённый) календарный месяц из окна тренда —
+    # иначе усреднение по неполному месяцу (напр. выгрузка 4 числа = 4 дня
+    # из ~30) занижает скорость продаж именно в момент, когда решение
+    # нужнее всего. Найдено тестированием на реальном файле 05.08.2026.
+    today = date.today()
+    if all_dates and all_dates[-1] == (today.year, today.month):
+        all_dates = all_dates[:-1]
+    months_used = all_dates[-_TRAILING_MONTHS:]
+    n_months = len(months_used) or 1
+
+    seasonality = calc_category_seasonality(channel_rows)
+
+    per_sku: dict[str, dict] = {}
+    for r in channel_rows:
+        sku = r["sku"]
+        d = r.get("sale_date")
+        if not d:
+            continue
+        cat = r.get("category") or ""
+        if scope_categories is not None and cat not in scope_categories:
+            continue
+        entry = per_sku.setdefault(sku, {
+            "name": r.get("name"), "category": cat, "subgroup": r.get("subgroup"),
+            "retail_by_month": defaultdict(float), "wholesale_orders": [],
+            "_last_rev": -1,
+        })
+        if (r.get("revenue") or 0) >= entry["_last_rev"]:
+            entry["name"] = r.get("name") or entry["name"]
+            entry["_last_rev"] = r.get("revenue") or 0
+        bucket = _channel_bucket(r.get("channel"))
+        ym = (d.year, d.month)
+        if bucket == "retail":
+            if ym in months_used:
+                entry["retail_by_month"][ym] += r.get("qty") or 0
+        elif bucket == "wholesale":
+            entry["wholesale_orders"].append(
+                {"date": d.date().isoformat(), "qty": r.get("qty") or 0, "channel": r.get("channel")})
+
+    # Kaspi-канал ЭТОГО файла (для сверки с KaspiRow сайта)
+    kaspi_channel_by_sku: dict[str, float] = defaultdict(float)
+    for r in channel_rows:
+        d = r.get("sale_date")
+        if d and (d.year, d.month) in months_used and (r.get("channel") or "").strip().lower() == "каспи":
+            kaspi_channel_by_sku[r["sku"]] += r.get("qty") or 0
+
+    # mvel_kaspi сайта (KaspiRow, отдельная загрузка Kaspi-матриц) — для сверки
+    months_used_labels = {f"{MONTH_ORDER[m-1]} {y}" for (y, m) in months_used}
+    site_kaspi_by_sku: dict[str, float] = defaultdict(float)
+    for r in rows:
+        if r.get("month") in months_used_labels:
+            site_kaspi_by_sku[sku_key(r)] += r.get("units") or 0
+
+    stock_by_sku: dict[str, dict] = {}
+    for s in stock_rows:
+        k = str(s.get("sku") or "").strip().upper()
+        if k:
+            stock_by_sku[k] = s
+
+    items = []
+    no_stock_data = []
+    cat_groups: dict[str, list] = defaultdict(list)
+
+    for sku, d in per_sku.items():
+        total_retail = sum(d["retail_by_month"].values())
+        mvel_retail = total_retail / n_months
+
+        st = stock_by_sku.get(sku)
+        if st is None:
+            if mvel_retail >= 0.5:  # не шумим товарами вообще без сигнала
+                no_stock_data.append({"sku": sku, "name": d["name"], "category": d["category"],
+                                       "mvel_retail": round(mvel_retail, 2)})
+            continue
+
+        kaspi_stock = (st.get("wh_pervomay") or 0) + (st.get("wh_astana") or 0) + (st.get("wh_shymkent") or 0)
+        near_pipeline = st.get("ymc_transit") or 0
+        far_pipeline = st.get("ordered") or 0
+
+        tier, cover_months, cover_months_full = _procurement_classify_v2(
+            mvel_retail, kaspi_stock, near_pipeline, far_pipeline)
+
+        target_units = (TARGET_COVER_DAYS / 30.0) * mvel_retail
+        need = target_units - kaspi_stock - near_pipeline - far_pipeline
+        suggest_qty = max(0, math.ceil(need)) if tier in ("T1_CRITICAL", "T2_PIPELINE") else 0
+
+        season_note = None
+        season_conflict = False
+        cur_month = months_used[-1][1] if months_used else None
+        cat_season = seasonality.get(d["category"])
+        if cat_season and cur_month:
+            idx = cat_season.get(cur_month)
+            if idx is not None:
+                season_note = {"month_index": idx}
+                # Тир/suggest_qty считаются по трейлинг-скорости — она может
+                # ещё "помнить" пик сезона, даже когда сам сезон уже кончился
+                # (см. документ: ровно так фризеры для мороженого весной-летом
+                # неверно попадали в T1 в ручном плане до root-cause фикса
+                # v8). Индекс <0.4 = явный сезонный спад — не глушим тир
+                # молча (могли ошибиться в подсчёте индекса), а помечаем
+                # явным конфликтом поверх прозрачного расчёта.
+                if idx < 0.4 and tier in ("T1_CRITICAL", "T2_PIPELINE"):
+                    season_conflict = True
+
+        wholesale_orders = sorted(d["wholesale_orders"], key=lambda o: o["date"])[-5:]
+        wholesale_total = sum(o["qty"] for o in d["wholesale_orders"])
+
+        kaspi_divergence = None
+        kc = kaspi_channel_by_sku.get(sku, 0)
+        sk = site_kaspi_by_sku.get(sku, 0)
+        base = max(kc, sk)
+        if base > 0:
+            diff = abs(kc - sk) / base
+            if diff > KASPI_DIVERGENCE_THRESHOLD:
+                kaspi_divergence = {"file_kaspi_units": round(kc, 1), "site_kaspi_units": round(sk, 1),
+                                     "diff_pct": round(diff * 100)}
+
+        item = {
+            "sku": sku, "name": d["name"], "category": d["category"], "subgroup": d["subgroup"],
+            "status": st.get("status"),
+            "mvel_retail": round(mvel_retail, 2),
+            "kaspi_stock": kaspi_stock,
+            "near_pipeline": near_pipeline, "far_pipeline": far_pipeline,
+            "cover_months": cover_months, "cover_months_full": cover_months_full,
+            "tier": tier, "suggest_qty": suggest_qty,
+            "season_note": season_note, "season_conflict": season_conflict,
+            "wholesale_pattern": {"total_13mo": round(wholesale_total, 0), "recent_orders": wholesale_orders}
+                                  if wholesale_orders else None,
+            "kaspi_divergence": kaspi_divergence,
+        }
+        items.append(item)
+        cat_groups[d["category"]].append(item)
+
+    made_to_order_groups = []
+    for cat, group in cat_groups.items():
+        if len(group) < 3:
+            continue
+        zero_stock = sum(1 for it in group if it["kaspi_stock"] <= 0)
+        share = zero_stock / len(group)
+        if share >= 0.8:
+            made_to_order_groups.append({"category": cat, "sku_count": len(group),
+                                          "zero_stock_count": zero_stock, "zero_stock_share": round(share, 2)})
+            for it in group:
+                it["made_to_order_group"] = True
+
+    TIER_ORDER = {"T1_CRITICAL": 0, "T2_PIPELINE": 1, "T3A_LISTING": 2, "T3B_LOWPRI": 3, "T4_OK": 4}
+    items.sort(key=lambda it: (TIER_ORDER.get(it["tier"], 9), -it["suggest_qty"], -it["mvel_retail"]))
+
+    return {
+        "items": items,
+        "made_to_order_groups": made_to_order_groups,
+        "no_stock_data": sorted(no_stock_data, key=lambda x: -x["mvel_retail"])[:50],
+        "months_used": sorted(months_used_labels, key=_month_sort_key),
+        "counts": {t: sum(1 for it in items if it["tier"] == t) for t in TIER_ORDER},
+        "target_cover_days": TARGET_COVER_DAYS,
+        "lead_time_days": LEAD_TIME_DAYS,
+        "review_cadence_days": REVIEW_CADENCE_DAYS,
+        "known_gaps": [
+            "MOQ (минимальная партия) по SKU/поставщику неизвестен — рекомендованное количество может быть меньше MOQ",
+            "Себестоимость/маржа по SKU недоступна — приоритизация по выручке, не по прибыли",
+            "Дата размещения заказа (2_ordered) неизвестна — 45 дней это верхняя граница, не точный расчёт",
+            "Плечо Первомай → Астана/Шымкент/Туздыбастау не оценено, буфер его не учитывает",
+            "Статус канала «Айдын Опт» (независимый дилер или связанная структура) не подтверждён",
+            "Порог расхождения Kaspi vs CRM (20%) — прикидка, не откалиброван на повторных загрузках",
+        ],
+    }
+
+
+def calc_category_scope(channel_rows: list[dict], core_categories: set[str],
+                         active_t1_categories: Optional[set] = None) -> dict:
+    """
+    Три уровня охвата (см. документ, разделы 3 и 11):
+      - "core": 4 отдела сайта (core_categories — соответствие категория
+        CRM -> отдел сайта, передаётся вызывающим кодом).
+      - "extended": не core, но входит в кумулятивные CATEGORY_MATERIALITY_CUM_PCT
+        (90%) выручки ИЛИ содержит хотя бы один T1_CRITICAL SKU прямо сейчас
+        (active_t1_categories — гарантия видимости, см. документ п.11:
+        "Рисоварки профессиональные"/"Слайсеры" не должны прятаться только
+        из-за низкого места в рейтинге выручки).
+      - "tail": всё остальное — видно только через переключатель "Показать всё".
+
+    ВАЖНО: T1-гарантия требует знать тир КАЖДОЙ категории заранее — вызывающий
+    код должен сначала посчитать calc_procurement_v2(scope_categories=None)
+    по всему каталогу и передать сюда категории с активным T1_CRITICAL;
+    охват здесь — фильтр ОТОБРАЖЕНИЯ поверх уже посчитанных данных, а не
+    ограничение расчёта. Гистерезис (чтобы категория не мигала между
+    загрузками у самой границы 90%) НЕ реализован — открытый пробел, см.
+    документ п.14.
+    """
+    active_t1_categories = active_t1_categories or set()
+    rev_by_cat: dict[str, float] = defaultdict(float)
+    for r in channel_rows:
+        rev_by_cat[r.get("category") or ""] += r.get("revenue") or 0
+    total_rev = sum(rev_by_cat.values()) or 1
+
+    ranked = sorted(rev_by_cat.items(), key=lambda x: -x[1])
+    cum = 0.0
+    scope_by_cat: dict[str, str] = {}
+    cum_pct_by_cat: dict[str, float] = {}
+    for cat, rev in ranked:
+        cum += rev
+        cum_pct = cum / total_rev
+        cum_pct_by_cat[cat] = round(cum_pct, 3)
+        if cat in core_categories:
+            scope_by_cat[cat] = "core"
+        elif cum_pct <= CATEGORY_MATERIALITY_CUM_PCT or cat in active_t1_categories:
+            scope_by_cat[cat] = "extended"
+        else:
+            scope_by_cat[cat] = "tail"
+
+    return {
+        "scope_by_category": scope_by_cat,
+        "revenue_by_category": dict(rev_by_cat),
+        "cumulative_pct_by_category": cum_pct_by_cat,
     }

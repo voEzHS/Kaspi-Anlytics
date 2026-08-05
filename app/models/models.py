@@ -132,6 +132,51 @@ class StockRow(Base):
     )
 
 
+class ChannelSalesUpload(Base):
+    """Один снимок транзакционной выгрузки CRM «Продажи всех каналов»
+    (SKU, кол-во, сумма, дата, канал продаж, категория/подгруппа). В отличие
+    от Upload (Kaspi-матрицы, накопительно по месяцам) — это тоже НЕ
+    накопительная загрузка: свежий экспорт каждый раз содержит полную
+    историю заново (сейчас ~13 мес), поэтому новая загрузка полностью
+    заменяет предыдущий снимок, как и StockUpload. См. Zakup_V2_Design
+    в корне репозитория — дизайн-документ, на основании которого построена
+    эта модель и связанный движок calc_procurement_v2."""
+    __tablename__ = "channel_sales_uploads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(255), nullable=False)
+    row_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+
+    rows = relationship("ChannelSalesRow", back_populates="upload", cascade="all, delete-orphan", lazy="select")
+
+
+class ChannelSalesRow(Base):
+    """Одна транзакция из выгрузки «Продажи всех каналов» CRM. Не привязана
+    к отделу сайта — сопоставление с отделом/категорией происходит на этапе
+    запроса в calc_procurement_v2, как и у StockRow."""
+    __tablename__ = "channel_sales_rows"
+
+    id = Column(Integer, primary_key=True, index=True)
+    upload_id = Column(Integer, ForeignKey("channel_sales_uploads.id", ondelete="CASCADE"), nullable=False)
+
+    sku = Column(String(100), nullable=False, index=True)
+    name = Column(Text, nullable=True)
+    qty = Column(Float, default=0)
+    revenue = Column(Float, default=0)
+    sale_date = Column(DateTime, nullable=True)          # «Дата отпуска»
+    channel = Column(String(150), nullable=True)          # «Канал продаж» (сырое значение)
+    category = Column(String(200), nullable=True, index=True)   # «Категория товара» (81 категория CRM)
+    subgroup = Column(String(200), nullable=True)          # «Подгруппа товара» (9 крупных групп)
+
+    upload = relationship("ChannelSalesUpload", back_populates="rows")
+
+    __table_args__ = (
+        Index("ix_channel_sales_sku", "sku"),
+        Index("ix_channel_sales_category", "category"),
+    )
+
+
 class AppSettings(Base):
     """Key-value settings store."""
     __tablename__ = "app_settings"

@@ -995,47 +995,75 @@ textarea.inp::placeholder{color:var(--muted)}
       </div>
     </div>
 
-    <!-- ZAKUP (план закупа: остатки CRM × продажи Kaspi) -->
+    <!-- ZAKUP v2 (план закупа: остатки CRM × продажи всех каналов CRM) —
+         см. Zakup_V2_Design_2026-08-05.md в корне репозитория за полным
+         обоснованием (14 разделов, 3 раунда самокритики на реальных данных). -->
     <div id="page-zakup" class="page">
-      <div class="sec" style="margin-bottom:16px">
-        <div class="sh" style="flex-wrap:wrap;gap:8px">
-          <span class="st"><i class="ti ti-database-import" style="color:var(--yellow)"></i> Остатки склада (CRM)</span>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span id="zk-stock-meta" style="font-size:12px;color:var(--muted)"></span>
-            <button class="btn btn-g" id="zk-stock-del" style="display:none;padding:5px 10px;font-size:12px" onclick="delStock()" title="Удалить снимок остатков"><i class="ti ti-trash" style="font-size:12px"></i></button>
+      <div class="g2" style="margin-bottom:16px">
+        <div class="sec" style="margin-bottom:0">
+          <div class="sh" style="flex-wrap:wrap;gap:8px">
+            <span class="st"><i class="ti ti-database-import" style="color:var(--yellow)"></i> Остатки склада (CRM)</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span id="zk-stock-meta" style="font-size:12px;color:var(--muted)"></span>
+              <button class="btn btn-g" id="zk-stock-del" style="display:none;padding:5px 10px;font-size:12px" onclick="delStock()" title="Удалить снимок остатков"><i class="ti ti-trash" style="font-size:12px"></i></button>
+            </div>
+          </div>
+          <div class="sb2">
+            <p style="font-size:12px;color:var(--muted);margin-bottom:10px"><i class="ti ti-info-circle" style="font-size:12px"></i> Файл «Экспорт товаров с надстройками» из CRM (torgstore.zymyran.com → Товары и остатки → Опции). Новый файл полностью заменяет предыдущий снимок — не накопительно.</p>
+            <div class="uz" id="stk-zone"
+              onclick="document.getElementById('stk-fi').click()"
+              ondragover="event.preventDefault();this.classList.add('drag')"
+              ondragleave="this.classList.remove('drag')"
+              ondrop="handleStockDrop(event)">
+              <i class="ti ti-file-spreadsheet"></i>
+              <p><strong>Нажми или перетащи файл</strong></p>
+              <p>Excel (.xlsx) — выгрузка остатков CRM</p>
+            </div>
+            <input type="file" id="stk-fi" accept=".xlsx" onchange="handleStockFile(this.files[0])">
           </div>
         </div>
-        <div class="sb2">
-          <p style="font-size:12px;color:var(--muted);margin-bottom:10px"><i class="ti ti-info-circle" style="font-size:12px"></i> Файл «Экспорт товаров с надстройками» из CRM (torgstore.zymyran.com → Товары и остатки → Опции). Новый файл полностью заменяет предыдущий снимок — остатки не накопительные, в отличие от продаж.</p>
-          <div class="uz" id="stk-zone"
-            onclick="document.getElementById('stk-fi').click()"
-            ondragover="event.preventDefault();this.classList.add('drag')"
-            ondragleave="this.classList.remove('drag')"
-            ondrop="handleStockDrop(event)">
-            <i class="ti ti-file-spreadsheet"></i>
-            <p><strong>Нажми или перетащи файл</strong></p>
-            <p>Excel (.xlsx) — выгрузка остатков CRM</p>
+        <div class="sec" style="margin-bottom:0">
+          <div class="sh" style="flex-wrap:wrap;gap:8px">
+            <span class="st"><i class="ti ti-chart-arrows-vertical" style="color:var(--ice)"></i> Продажи всех каналов (CRM)</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span id="zk-ch-meta" style="font-size:12px;color:var(--muted)"></span>
+              <button class="btn btn-g" id="zk-ch-del" style="display:none;padding:5px 10px;font-size:12px" onclick="delChannelSales()" title="Удалить снимок продаж"><i class="ti ti-trash" style="font-size:12px"></i></button>
+            </div>
           </div>
-          <input type="file" id="stk-fi" accept=".xlsx" onchange="handleStockFile(this.files[0])">
+          <div class="sb2">
+            <p style="font-size:12px;color:var(--muted);margin-bottom:10px"><i class="ti ti-info-circle" style="font-size:12px"></i> Транзакционная выгрузка CRM (Аналитика → Товары, custom-отчёт). Реальная скорость продаж по всем каналам, весь каталог — не только Kaspi и не только 4 отдела сайта.</p>
+            <div class="uz" id="ch-zone"
+              onclick="document.getElementById('ch-fi').click()"
+              ondragover="event.preventDefault();this.classList.add('drag')"
+              ondragleave="this.classList.remove('drag')"
+              ondrop="handleChannelSalesDrop(event)">
+              <i class="ti ti-file-spreadsheet"></i>
+              <p><strong>Нажми или перетащи файл</strong></p>
+              <p>Excel (.xlsx) — продажи всех каналов CRM</p>
+            </div>
+            <input type="file" id="ch-fi" accept=".xlsx" onchange="handleChannelSalesFile(this.files[0])">
+          </div>
         </div>
       </div>
 
       <div id="zk-ld" class="ld"><div class="spin"></div>Считаю план закупа...</div>
-      <div id="zk-em" class="empty" style="display:none"><i class="ti ti-truck-delivery"></i><h3>Нет данных</h3><p>Загрузи остатки выше, чтобы увидеть план закупа</p></div>
+      <div id="zk-em" class="empty" style="display:none"><i class="ti ti-truck-delivery"></i><h3>Нет данных</h3><p>Загрузи оба файла выше, чтобы увидеть план закупа</p></div>
       <div id="zk-ct" style="display:none">
         <div id="zk-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px"></div>
         <div id="zk-mto"></div>
         <div class="sec" style="margin-bottom:16px">
-          <div class="sh"><span class="st"><i class="ti ti-list-check" style="color:var(--yellow)"></i> План закупа по тирам</span></div>
+          <div class="sh" style="flex-wrap:wrap;gap:8px">
+            <span class="st"><i class="ti ti-list-check" style="color:var(--yellow)"></i> План закупа по тирам</span>
+            <div id="zk-scope-bar" style="display:flex;gap:5px;flex-wrap:wrap"></div>
+          </div>
           <p id="zk-months-note" style="font-size:11px;color:var(--muted);padding:12px 20px 0;margin:0"></p>
           <div style="overflow-x:auto">
             <table class="tbl" id="zk-t">
               <thead><tr>
-                <th>Тир</th><th>Артикул</th><th>Название</th><th>Тип</th>
-                <th style="text-align:right">Прод./мес</th>
-                <th style="text-align:right">Сток (3 склада)</th>
+                <th>Тир</th><th>Артикул</th><th>Название</th><th>Категория</th><th>Охват</th>
+                <th style="text-align:right">Прод./мес (розница)</th>
+                <th style="text-align:right">Сток</th>
                 <th style="text-align:right">В пути</th>
-                <th style="text-align:right">Заказано</th>
                 <th style="text-align:right">Покрытие, мес</th>
                 <th style="text-align:right">Купить</th>
               </tr></thead>
@@ -1047,11 +1075,12 @@ textarea.inp::placeholder{color:var(--muted)}
           <div class="sh"><span class="st"><i class="ti ti-help-circle" style="color:var(--muted)"></i> Продаются, но нет в выгрузке остатков</span></div>
           <div style="overflow-x:auto">
             <table class="tbl" id="zk-ns-t">
-              <thead><tr><th>Артикул</th><th>Название</th><th>Тип</th><th style="text-align:right">Прод./мес</th></tr></thead>
+              <thead><tr><th>Артикул</th><th>Название</th><th>Категория</th><th style="text-align:right">Прод./мес</th></tr></thead>
               <tbody id="zk-ns-body"></tbody>
             </table>
           </div>
         </div>
+        <div id="zk-gaps" style="font-size:11.5px;color:var(--muted);background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 14px;line-height:1.6"></div>
       </div>
     </div>
 
@@ -3174,7 +3203,8 @@ async function _doUpload(file){
   }catch(e){toast('Ошибка: '+e.message,'error');console.error(e);}
 }
 
-// ── ZAKUP (остатки CRM × план закупа) ──
+// ── ZAKUP v2 (остатки CRM × продажи всех каналов CRM) — см.
+// Zakup_V2_Design_2026-08-05.md в корне репозитория за полным обоснованием. ──
 function handleStockDrop(e){
   e.preventDefault();g('stk-zone').classList.remove('drag');
   const f=e.dataTransfer.files[0];if(f)handleStockFile(f);
@@ -3223,46 +3253,111 @@ async function _doDeleteStock(){
   }catch(e){toast('Ошибка: '+e.message,'error');}
 }
 
+function handleChannelSalesDrop(e){
+  e.preventDefault();g('ch-zone').classList.remove('drag');
+  const f=e.dataTransfer.files[0];if(f)handleChannelSalesFile(f);
+}
+function handleChannelSalesFile(file){
+  if(!file)return;
+  if(!file.name.match(/\.xlsx$/i)){toast('Нужен файл формата .xlsx (не .xls)','error');return;}
+  _doUploadChannelSales(file);
+}
+async function _doUploadChannelSales(file){
+  toast('Загружаю продажи по всем каналам... (файл большой, может занять минуту)','default');
+  const form=new FormData();
+  form.append('file',file);
+  try{
+    const ctrl=new AbortController();
+    const tid=setTimeout(()=>ctrl.abort(),120000);
+    const r=await fetch(API+'/channel-sales/',{method:'POST',body:form,signal:ctrl.signal,headers:{'x-admin-token':_adminToken||''}});
+    clearTimeout(tid);
+    if(r.status===403){
+      _adminToken=null;sessionStorage.removeItem('_kaspiAdmAuth');
+      showAdminModal(()=>_doUploadChannelSales(file));
+      return;
+    }
+    if(!r.ok){const t=await r.text();throw new Error(t);}
+    const data=await r.json();
+    toast(`<i class="ti ti-check" style="color:var(--green)"></i> Загружено ${fmtN(data.row_count)} транзакций${data.replaced_previous?' · заменён предыдущий снимок':''}`,'success');
+    try{g('ch-fi').value=null;}catch{g('ch-fi').value='';}
+    renderZakup();
+  }catch(e){toast('Ошибка: '+e.message,'error');console.error(e);}
+}
+function delChannelSales(){
+  showConfirm('Удалить продажи по каналам?','Текущий снимок будет удалён без возможности восстановления. Остатки не затронуты.',
+    ()=>_doDeleteChannelSales());
+}
+async function _doDeleteChannelSales(){
+  try{
+    const r=await fetch(API+'/channel-sales/',{method:'DELETE',headers:{'x-admin-token':_adminToken||''}});
+    if(r.status===403){
+      _adminToken=null;sessionStorage.removeItem('_kaspiAdmAuth');
+      showAdminModal(()=>_doDeleteChannelSales());
+      return;
+    }
+    if(!r.ok)throw new Error(await r.text());
+    toast('Продажи по каналам удалены','success');
+    renderZakup();
+  }catch(e){toast('Ошибка: '+e.message,'error');}
+}
+
 const ZK_TIER={
-  T1_CRITICAL:{label:'T1',full:'T1 · Критично',color:'var(--red)',hint:'продаётся, стока < 2 мес, пайплайна нет'},
+  T1_CRITICAL:{label:'T1',full:'T1 · Критично',color:'var(--red)',hint:'продаётся, стока < буфера, пайплайна нет'},
   T2_PIPELINE:{label:'T2',full:'T2 · В пути',color:'var(--yellow)',hint:'едет/заказано — проверить, хватит ли'},
-  T3A_LISTING:{label:'T3a',full:'T3a · Не продаётся',color:'var(--blue)',hint:'сток есть, Kaspi-продаж нет'},
+  T3A_LISTING:{label:'T3a',full:'T3a · Не продаётся',color:'var(--blue)',hint:'сток есть, розничных продаж нет'},
   T3B_LOWPRI:{label:'T3b',full:'T3b · Низкий приоритет',color:'var(--muted)',hint:'не продаётся и стока нет'},
   T4_OK:{label:'T4',full:'T4 · Норма',color:'var(--green)',hint:'стока достаточно'},
 };
+const ZK_SCOPE={
+  core:{label:'Ядро (4 отдела сайта)',color:'var(--ice)'},
+  extended:{label:'Расширенный охват',color:'var(--blue)'},
+  tail:{label:'Хвост (мелкие категории)',color:'var(--muted)'},
+};
+if(!window._zkScope) window._zkScope='core+extended'; // по умолчанию — не показываем хвост
+
+function setZkScope(v){ window._zkScope=v; renderZkTable(); }
 
 async function renderZakup(){
   ss('zk','ld');
   try{
-    const [meta, proc] = await Promise.all([
+    const [stockMeta, chMeta, proc] = await Promise.all([
       apig('/stock/').catch(()=>({loaded:false})),
-      apig('/analytics/procurement?department='+DA[A.dept]).catch(()=>null),
+      apig('/channel-sales/').catch(()=>({loaded:false})),
+      apig('/analytics/procurement-v2').catch(()=>null),
     ]);
 
-    const metaEl=g('zk-stock-meta'), delBtn=g('zk-stock-del');
-    if(meta && meta.loaded){
-      const rel=_relDate(new Date(meta.created_at));
-      if(metaEl) metaEl.textContent=`${meta.filename} · ${fmtN(meta.row_count)} строк · ${rel}`;
-      if(delBtn) delBtn.style.display='';
+    const stMetaEl=g('zk-stock-meta'), stDelBtn=g('zk-stock-del');
+    if(stockMeta && stockMeta.loaded){
+      if(stMetaEl) stMetaEl.textContent=`${stockMeta.filename} · ${fmtN(stockMeta.row_count)} строк · ${_relDate(new Date(stockMeta.created_at))}`;
+      if(stDelBtn) stDelBtn.style.display='';
     } else {
-      if(metaEl) metaEl.textContent='Остатки не загружены';
-      if(delBtn) delBtn.style.display='none';
+      if(stMetaEl) stMetaEl.textContent='Остатки не загружены';
+      if(stDelBtn) stDelBtn.style.display='none';
+    }
+    const chMetaEl=g('zk-ch-meta'), chDelBtn=g('zk-ch-del');
+    if(chMeta && chMeta.loaded){
+      if(chMetaEl) chMetaEl.textContent=`${chMeta.filename} · ${fmtN(chMeta.row_count)} строк · ${_relDate(new Date(chMeta.created_at))}`;
+      if(chDelBtn) chDelBtn.style.display='';
+    } else {
+      if(chMetaEl) chMetaEl.textContent='Продажи не загружены';
+      if(chDelBtn) chDelBtn.style.display='none';
     }
 
-    if(!meta || !meta.loaded){
+    if(!stockMeta?.loaded || !chMeta?.loaded){
       ss('zk','em');
       const em=g('zk-em');
-      if(em) em.innerHTML='<i class="ti ti-truck-delivery"></i><h3>Остатки не загружены</h3><p>Загрузи файл выгрузки CRM выше, чтобы увидеть план закупа</p>';
+      const missing=[!stockMeta?.loaded?'остатки':null, !chMeta?.loaded?'продажи по всем каналам':null].filter(Boolean).join(' и ');
+      if(em) em.innerHTML=`<i class="ti ti-truck-delivery"></i><h3>Загружены не все данные</h3><p>Нужно загрузить: ${missing} — см. блоки выше</p>`;
       return;
     }
-    if(!proc){ss('zk','em','Не удалось получить данные закупа');return;}
-    if(!proc.items.length && !(proc.no_stock_data||[]).length){
+    if(!proc || (!proc.items?.length && !(proc.no_stock_data||[]).length)){
       ss('zk','em');
       const em=g('zk-em');
-      if(em) em.innerHTML=`<i class="ti ti-truck-delivery"></i><h3>Нет данных по этому отделу</h3><p>Нет загруженных продаж «${DL[A.dept]}» за последние месяцы</p>`;
+      if(em) em.innerHTML='<i class="ti ti-truck-delivery"></i><h3>Нет данных</h3><p>Не удалось посчитать план закупа — проверьте оба файла</p>';
       return;
     }
     ss('zk','ct');
+    window._zkProc=proc;
 
     const counts=proc.counts||{};
     const t1t2=proc.items.filter(it=>it.tier==='T1_CRITICAL'||it.tier==='T2_PIPELINE');
@@ -3281,40 +3376,33 @@ async function renderZakup(){
       `<div style="background:var(--s1);border:1px solid rgba(210,153,34,.4);border-top:3px solid var(--yellow);border-radius:10px;padding:14px 16px">
         <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px"><i class="ti ti-shopping-cart" style="font-size:11px"></i> Рекомендуется купить</div>
         <div style="font-size:22px;font-weight:800;color:var(--yellow)">${fmtN(totalBuy)} шт.</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">по ${t1t2.length} позициям T1+T2</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">по ${t1t2.length} позициям T1+T2, весь каталог</div>
       </div>`;
 
     const mtoGroups=proc.made_to_order_groups||[];
     g('zk-mto').innerHTML=mtoGroups.map(gr=>`
       <div style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text);background:rgba(163,113,247,.08);border:1px solid rgba(163,113,247,.3);border-radius:8px;padding:10px 14px;margin-bottom:8px">
         <i class="ti ti-alert-triangle" style="color:var(--purple);font-size:15px;flex-shrink:0;margin-top:1px"></i>
-        <span><b>«${gr.tip}»</b> — похоже на «под заказ»: ${gr.zero_stock_count} из ${gr.sku_count} SKU (${Math.round(gr.zero_stock_share*100)}%) без физического стока на всех 3 складах Kaspi. Обычная логика покрытия здесь может ошибаться — проверить вручную, прежде чем закупать по этой таблице.</span>
+        <span><b>«${gr.category}»</b> — похоже на «под заказ»: ${gr.zero_stock_count} из ${gr.sku_count} SKU (${Math.round(gr.zero_stock_share*100)}%) без физического стока. Обычная логика покрытия здесь может ошибаться — проверить вручную, прежде чем закупать по этой таблице.</span>
       </div>`).join('');
 
     const monthsNote=g('zk-months-note');
     if(monthsNote) monthsNote.textContent=(proc.months_used&&proc.months_used.length)
-      ? `Прод./мес — средняя скорость продаж на Kaspi за ${proc.months_used.join(', ')}. Сток — сумма складов Первомай+Астана+Шымкент (Туздыбастау не учитывается — резервный склад).`
+      ? `Прод./мес — розничная скорость продаж (без опта/дилеров — см. документ) за ${proc.months_used.join(', ')}. Буфер закупа: ${proc.lead_time_days||45} дней лид-тайм + ${proc.review_cadence_days||15} дней периодичность проверки.`
       : '';
 
-    g('zk-body').innerHTML=proc.items.length ? proc.items.map(it=>{
-      const tc=ZK_TIER[it.tier]||{label:it.tier,color:'var(--muted)'};
-      const badge=`<span style="background:${tc.color}22;color:${tc.color};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap">${tc.label}</span>`;
-      const flags=(it.dead_signal?`<i class="ti ti-mood-empty" title="0 продаж в последнем загруженном месяце, хотя раньше продавался" style="color:var(--red);font-size:12px;margin-left:5px"></i>`:'')
-                 +(it.made_to_order_group?`<i class="ti ti-package" title="Категория похожа на «под заказ» — см. предупреждение выше" style="color:var(--purple);font-size:12px;margin-left:5px"></i>`:'');
-      const whTitle=`Первомай ${fmtN(it.wh_pervomay)} · Астана ${fmtN(it.wh_astana)} · Шымкент ${fmtN(it.wh_shymkent)}`;
-      return `<tr>
-        <td>${badge}</td>
-        <td style="font-family:monospace;font-size:12px;color:var(--muted)">${it.kod||'—'}</td>
-        <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(it.name||'')}">${it.name||'—'}${flags}</td>
-        <td style="color:var(--muted);font-size:12px">${it.tip||'—'}</td>
-        <td style="text-align:right">${it.mvel_kaspi}</td>
-        <td style="text-align:right" title="${whTitle}">${fmtN(it.kaspi_stock)}</td>
-        <td style="text-align:right;color:var(--muted)">${fmtN(it.ymc_transit)}</td>
-        <td style="text-align:right;color:var(--muted)">${fmtN(it.ordered)}</td>
-        <td style="text-align:right">${it.cover_months!=null?it.cover_months:'—'}</td>
-        <td style="text-align:right;font-weight:700;color:${it.suggest_qty>0?'var(--yellow)':'var(--muted)'}">${it.suggest_qty>0?fmtN(it.suggest_qty):'—'}</td>
-      </tr>`;
-    }).join('') : `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--muted)">Нет продаж этого отдела за последние месяцы</td></tr>`;
+    // ── переключатель охвата ──
+    const scopeBar=g('zk-scope-bar');
+    if(scopeBar){
+      const pill=(val,label,color)=>{
+        const active=window._zkScope===val;
+        return `<button onclick="setZkScope('${val}')" style="padding:4px 11px;border-radius:15px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid ${active?color:'var(--border)'};background:${active?color+'1f':'transparent'};color:${active?color:'var(--muted)'}">${label}</button>`;
+      };
+      scopeBar.innerHTML =
+        pill('core','Ядро','var(--ice)') +
+        pill('core+extended','Ядро + Расширенный','var(--blue)') +
+        pill('all','Показать всё (с хвостом)','var(--muted)');
+    }
 
     const noStock=proc.no_stock_data||[];
     const nsWrap=g('zk-nostock-wrap');
@@ -3322,16 +3410,61 @@ async function renderZakup(){
       if(noStock.length){
         nsWrap.style.display='';
         g('zk-ns-body').innerHTML=noStock.map(x=>`<tr>
-          <td style="font-family:monospace;font-size:12px;color:var(--muted)">${x.kod||'—'}</td>
+          <td style="font-family:monospace;font-size:12px;color:var(--muted)">${x.sku||'—'}</td>
           <td>${x.name||'—'}</td>
-          <td style="color:var(--muted);font-size:12px">${x.tip||'—'}</td>
-          <td style="text-align:right">${x.mvel_kaspi}</td>
+          <td style="color:var(--muted);font-size:12px">${x.category||'—'}</td>
+          <td style="text-align:right">${x.mvel_retail}</td>
         </tr>`).join('');
       } else {
         nsWrap.style.display='none';
       }
     }
+
+    const gaps=proc.known_gaps||[];
+    const gapsEl=g('zk-gaps');
+    if(gapsEl) gapsEl.innerHTML = gaps.length
+      ? `<div style="font-weight:700;color:var(--text);margin-bottom:4px"><i class="ti ti-alert-circle" style="font-size:12px"></i> Известные ограничения этого расчёта:</div><ul style="margin:0;padding-left:18px">${gaps.map(g=>`<li>${g}</li>`).join('')}</ul>`
+      : '';
+
+    renderZkTable();
   }catch(e){ss('zk','em',e.message);console.error(e);}
+}
+
+const TARGET_COVER_DAYS_LABEL='60д';
+function renderZkTable(){
+  const proc=window._zkProc;
+  if(!proc) return;
+  const scope=window._zkScope||'core+extended';
+  const allowed = scope==='all' ? new Set(['core','extended','tail'])
+                : scope==='core' ? new Set(['core'])
+                : new Set(['core','extended']);
+  const items = proc.items.filter(it=>allowed.has(it.scope));
+
+  g('zk-body').innerHTML = items.length ? items.map(it=>{
+    const tc=ZK_TIER[it.tier]||{label:it.tier,color:'var(--muted)'};
+    const sc=ZK_SCOPE[it.scope]||{label:it.scope,color:'var(--muted)'};
+    const badge=`<span style="background:${tc.color}22;color:${tc.color};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap">${tc.label}</span>`;
+    const scopeBadge=`<span style="color:${sc.color};font-size:10.5px;font-weight:600">${sc.label}</span>`;
+    let flags='';
+    if(it.season_conflict) flags+=`<i class="ti ti-sun-off" title="Сезонный индекс месяца ×${it.season_note?.month_index} — похоже на сезонный спад, не дефицит. Проверить перед закупом." style="color:var(--yellow);font-size:12px;margin-left:5px"></i>`;
+    if(it.made_to_order_group) flags+=`<i class="ti ti-package" title="Категория похожа на «под заказ» — см. предупреждение выше" style="color:var(--purple);font-size:12px;margin-left:5px"></i>`;
+    if(it.kaspi_divergence) flags+=`<i class="ti ti-alert-triangle" title="Kaspi-канал в файле продаж (${it.kaspi_divergence.file_kaspi_units} шт) расходится с загрузкой сайта (${it.kaspi_divergence.site_kaspi_units} шт) на ${it.kaspi_divergence.diff_pct}%" style="color:var(--red);font-size:12px;margin-left:5px"></i>`;
+    const pipeTitle=`Близко (≤15д, отправлено с завода): ${fmtN(it.near_pipeline)} · Далеко (заказано, до ${TARGET_COVER_DAYS_LABEL}): ${fmtN(it.far_pipeline)}`;
+    const wp=it.wholesale_pattern;
+    const wpTitle = wp ? `Опт/дилеры за 13 мес: ${fmtN(wp.total_13mo)} шт (не входит в буфер — см. документ)` : '';
+    return `<tr>
+      <td>${badge}</td>
+      <td style="font-family:monospace;font-size:12px;color:var(--muted)">${it.sku||'—'}</td>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(it.name||'')}">${it.name||'—'}${flags}</td>
+      <td style="color:var(--muted);font-size:12px" title="${it.subgroup||''}">${it.category||'—'}</td>
+      <td>${scopeBadge}</td>
+      <td style="text-align:right">${it.mvel_retail}</td>
+      <td style="text-align:right" title="${wpTitle}">${fmtN(it.kaspi_stock)}${wp?` <i class="ti ti-building-warehouse" style="font-size:10px;color:var(--muted)"></i>`:''}</td>
+      <td style="text-align:right;color:var(--muted)" title="${pipeTitle}">${fmtN((it.near_pipeline||0)+(it.far_pipeline||0))}</td>
+      <td style="text-align:right">${it.cover_months!=null?it.cover_months:'—'}</td>
+      <td style="text-align:right;font-weight:700;color:${it.suggest_qty>0?'var(--yellow)':'var(--muted)'}">${it.suggest_qty>0?fmtN(it.suggest_qty):'—'}</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--muted)">Нет позиций в этом охвате</td></tr>`;
 }
 
 // ── SETTINGS ──

@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, distinct, func
 
 from app.core.database import init_db, AsyncSessionLocal
-from app.routers import analytics, uploads, settings, stock
+from app.routers import analytics, uploads, settings, stock, channel_sales
 from app.routers import ai_router
 from app.routers.uploads import require_admin
 from app.models.models import KaspiRow, AppSettings
@@ -310,6 +310,7 @@ app.include_router(analytics.router)
 app.include_router(ai_router.router)
 app.include_router(settings.router)
 app.include_router(stock.router)
+app.include_router(channel_sales.router)
 
 # ── Static frontend (single HTML file) ────────────────────────────────────────
 _STATIC = Path(__file__).parent.parent / "static"
