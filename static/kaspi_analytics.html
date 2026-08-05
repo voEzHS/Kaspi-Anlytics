@@ -1298,6 +1298,64 @@ function kLink(name, brand, small, vetka, kod){
     <i class="ti ti-search" style="font-size:11px"></i>Найти
   </a>`;
 }
+
+// ── Рыночная стратегия по ветке (05.08.2026) ──────────────────────────────
+// Раньше приоритет SKU считался только по его собственной выручке/отзывам/тренду
+// на Kaspi — без учёта того, крупная ли это ветка рынка и какая у нас там доля.
+// Из-за этого товар в огромной, но слабо освоенной ветке (например бонеты/лари
+// 500-800л — рынок 250-280 млн ₸, наша доля 2-3% против средних ~10% по отделу)
+// тонул в "низком приоритете" ПОТОМУ ЧТО мало продаётся на Kaspi — хотя причина
+// может быть в слабой видимости/продвижении, а не в отсутствии спроса
+// (самоисполняющееся пророчество). vetkaStrategy() строит по уже загруженным
+// данным вкладки «Ветки» карту: 🔥 Точка роста = ветка крупнее медианной по
+// отделу И наша доля там ниже средней; ✅ Уже сильны = доля заметно выше средней.
+function vetkaStrategy(vetkaList){
+  const list = (vetkaList||[]).filter(v=>(v.revenue||0)>0);
+  const empty = {avgShare:0, medianRev:0, classify:()=>null};
+  if(!list.length) return empty;
+  const totalRev = list.reduce((s,v)=>s+v.revenue,0);
+  const totalOur = list.reduce((s,v)=>s+(v.our_revenue||0),0);
+  const avgShare = totalRev>0 ? (totalOur/totalRev*100) : 0;
+  const sortedRev = list.map(v=>v.revenue).sort((a,b)=>a-b);
+  const mid = Math.floor(sortedRev.length/2);
+  const medianRev = sortedRev.length%2 ? sortedRev[mid] : (sortedRev[mid-1]+sortedRev[mid])/2;
+  const byName = {};
+  list.forEach(v=>{ byName[v.vetka] = v; });
+  function classify(vetkaName){
+    const v = byName[vetkaName];
+    if(!v) return null;
+    const share = v.our_share_pct||0;
+    if(v.revenue>=medianRev && share<avgShare) return {tag:'🔥', label:'Точка роста', v, avgShare, medianRev};
+    if(share>=avgShare*1.3) return {tag:'✅', label:'Уже сильны', v, avgShare, medianRev};
+    return {tag:'', label:'', v, avgShare, medianRev};
+  }
+  return {avgShare, medianRev, classify};
+}
+// Применяет буст к impact-карточке по списку исходных SKU (каждый — {vetka, revenue}).
+// Буст пропорционален доле выручки товаров, сидящих в "точке роста" (не всё-или-ничего),
+// чтобы группа из разных веток не получала буст целиком из-за одного SKU.
+function applyVetkaBoost(items, impact, strat){
+  if(!items || !items.length || !strat || !strat.classify) return {impact, note:''};
+  let fireRev = 0, totalRev = 0, fireOne = null;
+  items.forEach(it=>{
+    const rev = it.revenue||0;
+    totalRev += rev;
+    const cls = strat.classify(it.vetka);
+    if(cls && cls.tag==='🔥'){ fireRev += rev; if(!fireOne || rev>(fireOne.item.revenue||0)) fireOne = {item:it, cls}; }
+  });
+  if(!fireOne || totalRev<=0) return {impact, note:''};
+  const fireShare = fireRev/totalRev;
+  const boosted = impact * (1 + 0.3*fireShare);
+  const c = fireOne.cls;
+  const note = `<div style="margin-top:6px;padding:6px 9px;background:rgba(255,140,0,.1);border:1px solid rgba(255,140,0,.35);border-radius:6px;font-size:11px;color:#FF8C00"><i class="ti ti-flame" style="font-size:11px"></i> Точка роста по рынку: ветка «${fireOne.item.vetka}» — рынок ${fmtR(c.v.revenue)}, наша доля ${(c.v.our_share_pct||0).toFixed(1)}% против среднего ${c.avgShare.toFixed(1)}% по отделу. Низкая скорость продаж на Kaspi здесь может быть причиной слабой видимости, а не низкого спроса.</div>`;
+  return {impact:boosted, note};
+}
+// Определяет "обвал", похожий на дефицит/делистинг, а не на органическое падение
+// спроса — по форме кривой (последний месяц << пика), без данных об остатках.
+function isCliffDrop(s){
+  const peak = s.peak_revenue||0, latest = s.latest_revenue||0;
+  return peak>0 && latest <= peak*0.15;
+}
 function g(id){return document.getElementById(id)}
 // XSS-safe HTML escaper — apply to all server-supplied strings inserted via innerHTML
 function escHtml(s){
@@ -3665,6 +3723,7 @@ async function renderPriority(){
       const mom     = D.intel?.sku_momentum||{};
       const segIntel = D.intel?.segment_intelligence||[];
       const ourA    = D.abc?.our_a_items||[];
+      const strat   = vetkaStrategy(D.vt?.vetka||[]); // 🔥 рыночная стратегия по ветке для этого combo
 
       // Тег показывает: [Холод. витрины] [Ларь] — или просто [Морозильники] если нет подтипов
       const dTag = D.subtype
@@ -3688,13 +3747,15 @@ async function renderPriority(){
       // ① SKU с 0 отзывами (кроме A-товаров — они в ③)
       const noRevExcl = aRiskKods.size ? noRev.filter(x=>!x.kod||!aRiskKods.has(x.kod)) : noRev;
       if(noRevExcl.length){
-        const estLoss = roiPer>0 ? roiPer*5*noRevExcl.length : noRevExcl.reduce((s,x)=>s+x.revenue*0.3,0);
+        const estLoss0 = roiPer>0 ? roiPer*5*noRevExcl.length : noRevExcl.reduce((s,x)=>s+x.revenue*0.3,0);
+        const _b1 = applyVetkaBoost(noRevExcl, estLoss0, strat);
+        const estLoss = _b1.impact;
         const top = noRevExcl[0];
         const topName = top?.name||top?.brand||top?.kod||'';
         oppList.push({
           effort:'fast', impact:estLoss, cat:'Отзывы', catColor:'var(--red)', icon:'ti-message-plus', dTag,
           title:`${noRevExcl.length} наших SKU — 0 отзывов`,
-          context:`Kaspi ранжирует: рейтинг² × log(отзывы+1). При 0 отзывах товар невидим в поиске.${topName?` Топ по выручке — ${topName} (${fmtR(top.revenue)}/мес) — полностью невидим.`:''}${roiPer>0?` 1 отзыв = +${fmtR(roiPer)}/мес по данным рынка.`:''}`,
+          context:`Kaspi ранжирует: рейтинг² × log(отзывы+1). При 0 отзывах товар невидим в поиске.${topName?` Топ по выручке — ${topName} (${fmtR(top.revenue)}/мес) — полностью невидим.`:''}${roiPer>0?` 1 отзыв = +${fmtR(roiPer)}/мес по данным рынка.`:''}${_b1.note}`,
           money:`~${fmtR(estLoss)}/мес при добавлении 5 отзывов каждому`,
           action:`Начать с топ-${Math.min(5,noRevExcl.length)} по выручке`,
           links:noRevExcl.slice(0,4).map(s=>pill(s)).join('')+(noRevExcl.length>4?`<span class="pr-more">+${noRevExcl.length-4}</span>`:''),
@@ -3706,11 +3767,13 @@ async function renderPriority(){
       const fewRevExcl = aRiskKods.size ? fewRev.filter(x=>!x.kod||!aRiskKods.has(x.kod)) : fewRev;
       if(fewRevExcl.length){
         const need=fewRevExcl.reduce((s,x)=>s+Math.max(0,5-x.reviews),0);
-        const est2=roiPer>0?roiPer*need:fewRevExcl.reduce((s,x)=>s+x.revenue*0.15,0);
+        const est2raw=roiPer>0?roiPer*need:fewRevExcl.reduce((s,x)=>s+x.revenue*0.15,0);
+        const _b2 = applyVetkaBoost(fewRevExcl, est2raw, strat);
+        const est2 = _b2.impact;
         oppList.push({
           effort:'fast', impact:est2, cat:'Отзывы', catColor:'var(--yellow)', icon:'ti-message-circle', dTag,
           title:`${fewRevExcl.length} SKU с 1–4 отзывами — ниже порога доверия`,
-          context:`До 5 отзывов конверсия минимальна. После 5 — резкий рост, после 10 — стабилизация. Нужно добрать ${need} отзывов суммарно.`,
+          context:`До 5 отзывов конверсия минимальна. После 5 — резкий рост, после 10 — стабилизация. Нужно добрать ${need} отзывов суммарно.${_b2.note}`,
           money:`+${fmtR(est2)}/мес при достижении 5+ у всех`,
           action:`Дозаказать ${need} отзывов — начинать с тех у кого 1-2`,
           links:fewRevExcl.slice(0,4).map(s=>`<div class="pr-pill"><span>${(s.name||s.brand||s.kod||'').slice(0,22)}</span><span style="color:var(--yellow);font-size:11px;margin-left:4px">${s.reviews} отз.</span>${kLink(s.name,s.brand,true,s.vetka,s.kod)}</div>`).join('')+(fewRevExcl.length>4?`<span class="pr-more">+${fewRevExcl.length-4}</span>`:''),
@@ -3721,10 +3784,11 @@ async function renderPriority(){
       // переменная aRisk уже объявлена выше
       if(aRisk.length){
         const totalAtRisk=aRisk.reduce((s,x)=>s+x.revenue,0);
+        const _b3 = applyVetkaBoost(aRisk, totalAtRisk*0.25, strat);
         oppList.push({
-          effort:'fast', impact:totalAtRisk*0.25, cat:'ABC-A', catColor:'var(--purple)', icon:'ti-crown', dTag,
+          effort:'fast', impact:_b3.impact, cat:'ABC-A', catColor:'var(--purple)', icon:'ti-crown', dTag,
           title:`${aRisk.length} A-товар(а) без отзывов — главная выручка уязвима`,
-          context:`ABC-A дают основную часть продаж. Суммарно ${fmtR(totalAtRisk)}/мес. Конкурент с отзывами выйдет выше в поиске и перехватит покупателя именно у самых прибыльных товаров. Это первый приоритет перед любой другой кампанией.`,
+          context:`ABC-A дают основную часть продаж. Суммарно ${fmtR(totalAtRisk)}/мес. Конкурент с отзывами выйдет выше в поиске и перехватит покупателя именно у самых прибыльных товаров. Это первый приоритет перед любой другой кампанией.${_b3.note}`,
           money:`${fmtR(totalAtRisk*0.25)}/мес под риском перехвата`,
           action:`Запустить отзывы на A-товары немедленно — защищаем ключевую выручку`,
           links:aRisk.slice(0,3).map(a=>pill(a)).join(''),
@@ -3735,10 +3799,11 @@ async function renderPriority(){
       // ④ Растущие SKU — масштабировать (fast)
       (mom.rising_ours||[]).slice(0,2).forEach(s=>{
         const nm=s.name||s.brand||s.kod||'';
+        const _b4 = applyVetkaBoost([{vetka:s.vetka, revenue:s.avg_monthly_revenue}], s.avg_monthly_revenue*0.3, strat);
         oppList.push({
-          effort:'fast', impact:s.avg_monthly_revenue*0.3, cat:'Масштаб', catColor:'var(--green)', icon:'ti-rocket', dTag,
+          effort:'fast', impact:_b4.impact, cat:'Масштаб', catColor:'var(--green)', icon:'ti-rocket', dTag,
           title:`«${nm.slice(0,40)}» растёт +${s.momentum_pct}%/мес`,
-          context:`${s.months||2}+ мес устойчивого роста. Средняя выручка ${fmtR(s.avg_monthly_revenue)}/мес. Рынок принимает товар — нужно поддержать импульс до его затухания.`,
+          context:`${s.months||2}+ мес устойчивого роста. Средняя выручка ${fmtR(s.avg_monthly_revenue)}/мес. Рынок принимает товар — нужно поддержать импульс до его затухания.${_b4.note}`,
           money:`+${fmtR(s.avg_monthly_revenue*0.3)}/мес при увеличении бюджета`,
           action:`Поднять Kaspi Ads, проверить склад, добавить SKU в этой ветке`,
           links:pill(s),
@@ -3748,14 +3813,23 @@ async function renderPriority(){
 
       // ⑤ Падающие SKU — остановить (fast/urgent)
       (mom.declining_ours||[]).slice(0,2).forEach(s=>{
-        const lost=Math.abs(s.momentum_pct/100)*s.avg_monthly_revenue;
+        const lostRaw=Math.abs(s.momentum_pct/100)*s.avg_monthly_revenue;
+        const _b5 = applyVetkaBoost([{vetka:s.vetka, revenue:s.avg_monthly_revenue}], lostRaw, strat);
+        const lost = _b5.impact;
         const nm=s.name||s.brand||s.kod||'';
+        // Самоисполняющееся пророчество (05.08.2026): обвал до <=15% от пикового
+        // месяца при этом выглядит скорее как дефицит/делистинг, чем органическое
+        // падение спроса — на сайте нет данных об остатках (CRM ещё не подключён,
+        // см. задачу "Подключить данные об остатках/поставках из CRM"), поэтому
+        // это единственный сигнал, который можно посчитать по имеющимся Kaspi-продажам.
+        const cliff = isCliffDrop(s);
+        const cliffNote = cliff ? `<div style="margin-top:6px;padding:6px 9px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.35);border-radius:6px;font-size:11px;color:var(--red)"><i class="ti ti-alert-triangle" style="font-size:11px"></i> Похоже на обвал, а не плавное падение: последний месяц ${fmtR(s.latest_revenue)} — это ≤15% от пика ${fmtR(s.peak_revenue)}. Частая причина такой формы кривой — дефицит на складе или снятие с продажи, а не потеря спроса. Остатков на сайте нет — проверить в CRM/на складе В ПЕРВУЮ очередь, прежде чем разбирать цену/отзывы конкурентов.</div>` : '';
         oppList.push({
-          effort:'fast', impact:lost, cat:'Падение', catColor:'var(--red)', icon:'ti-trending-down', dTag,
-          title:`«${nm.slice(0,40)}» теряет ${Math.abs(s.momentum_pct)}%/мес`,
-          context:`${s.months||2}+ мес падения подряд. Теряем ${fmtR(lost)} каждый месяц. Причины: конкурент снизил цену, вышел сильный аналог, или истекли отзывы (90 дней Kaspi).`,
+          effort:'fast', impact:lost, cat:'Падение', catColor:'var(--red)', icon: cliff?'ti-alert-triangle':'ti-trending-down', dTag,
+          title:`«${nm.slice(0,40)}» теряет ${Math.abs(s.momentum_pct)}%/мес${cliff?' — похоже на обвал':''}`,
+          context:`${s.months||2}+ мес падения подряд. Теряем ${fmtR(lost)} каждый месяц. Причины: конкурент снизил цену, вышел сильный аналог, или истекли отзывы (90 дней Kaspi).${cliffNote}${_b5.note}`,
           money:`Останавливаем потерю ${fmtR(lost)}/мес`,
-          action:`Сегодня: проверить цену конкурентов, количество отзывов, наличие товара`,
+          action: cliff ? `Сегодня: проверить остаток/наличие товара в первую очередь — форма падения похожа на дефицит, не на конкуренцию` : `Сегодня: проверить цену конкурентов, количество отзывов, наличие товара`,
           links:pill(s),
           calcNote:`Текущий темп падения ${Math.abs(s.momentum_pct)}%/мес × средняя выручка (${fmtR(s.avg_monthly_revenue)}/мес) — сумма, теряемая каждый месяц без вмешательства.`,
         });
@@ -3794,11 +3868,13 @@ async function renderPriority(){
       // ⑧ Рейтинг <4.5★ (medium)
       if(lowRat.length){
         const wst=lowRat.slice(0,3);
-        const tot=wst.reduce((s,x)=>s+x.revenue*0.15,0);
+        const totRaw=wst.reduce((s,x)=>s+x.revenue*0.15,0);
+        const _b8 = applyVetkaBoost(wst, totRaw, strat);
+        const tot = _b8.impact;
         oppList.push({
           effort:'medium', impact:tot, cat:'Рейтинг', catColor:'#F0A500', icon:'ti-star-half', dTag,
           title:`${lowRat.length} SKU с рейтингом <4.5★ — Kaspi снижает позицию`,
-          context:`Kaspi: 4★ = отрицательный, 5★ = положительный. Товар 4.2★ проигрывает конкуренту 4.8★ при одинаковой цене — алгоритмически. Нужно найти системную причину негатива.`,
+          context:`Kaspi: 4★ = отрицательный, 5★ = положительный. Товар 4.2★ проигрывает конкуренту 4.8★ при одинаковой цене — алгоритмически. Нужно найти системную причину негатива.${_b8.note}`,
           money:`~${fmtR(tot)}/мес потенциал при росте рейтинга`,
           action:`Прочитать все негативные отзывы — найти повторяющуюся причину`,
           links:wst.map(s=>`<div class="pr-pill"><span>${(s.name||s.brand||s.kod||'').slice(0,22)}</span><span style="color:var(--red);font-size:11px;margin-left:4px">${(+s.rating).toFixed(1)}★</span>${kLink(s.name,s.brand,true,s.vetka,s.kod)}</div>`).join(''),
@@ -4560,6 +4636,7 @@ async function renderTactics(){
     const ov=ovData;
     const brands=brData.brands||[];
     const vetka=vtData.vetka||[];
+    const strat=vetkaStrategy(vetka); // 🔥 рыночная стратегия по ветке (05.08.2026)
     const monthly=ov.monthly||[];
     const ourShare=+(ov.our_share_pct||0);
     const ourSku=ov.our_sku||0;
@@ -4667,12 +4744,14 @@ async function renderTactics(){
       // 1. SKUs with 0 reviews — estimate lost revenue via roi
       if(noReviews.length > 0){
         const avgRev = noReviews.reduce((s,x)=>s+x.revenue,0)/noReviews.length || 0;
-        const impact = roiOverall > 0 ? roiOverall * 5 * noReviews.length : avgRev * 0.3 * noReviews.length;
+        const impactRaw = roiOverall > 0 ? roiOverall * 5 * noReviews.length : avgRev * 0.3 * noReviews.length;
+        const _bt1 = applyVetkaBoost(noReviews, impactRaw, strat);
+        const impact = _bt1.impact;
         const top3 = noReviews.slice(0,3);
         opps.push({
           impact, urgency:'red',
           label: `${noReviews.length} SKU без отзывов — невидимы в поиске Kaspi`,
-          detail: `Оценка потерь: ~${fmtR(impact)}/мес`,
+          detail: `Оценка потерь: ~${fmtR(impact)}/мес${_bt1.note?' · 🔥 точка роста по рынку':''}`,
           links: top3.map(s=>`<div style="display:inline-flex;align-items:center;gap:3px;background:var(--s2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;font-size:11px;white-space:nowrap"><span>${(s.name||s.brand||'').slice(0,30)}</span>${kLink(s.name,s.brand,true,s.vetka,s.kod)}</div>`).join(''),
         });
       }
@@ -4680,11 +4759,13 @@ async function renderTactics(){
       // 2. Few reviews (1-4) — below trust threshold
       if(fewReviews.length > 0){
         const need = fewReviews.reduce((s,x)=>s+Math.max(0,5-x.reviews),0);
-        const impact2 = roiOverall * need;
+        const impact2raw = roiOverall * need;
+        const _bt2 = applyVetkaBoost(fewReviews, impact2raw, strat);
+        const impact2 = _bt2.impact;
         opps.push({
           impact: impact2, urgency:'yellow',
           label: `${fewReviews.length} SKU с 1–4 отзывами — ниже порога доверия`,
-          detail: `Нужно ещё ${need} отзывов суммарно — ${fmtR(impact2)} потенциал`,
+          detail: `Нужно ещё ${need} отзывов суммарно — ${fmtR(impact2)} потенциал${_bt2.note?' · 🔥 точка роста по рынку':''}`,
           links: fewReviews.slice(0,3).map(s=>`<div style="display:inline-flex;align-items:center;gap:3px;background:var(--s2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;font-size:11px;white-space:nowrap"><span>${(s.name||s.brand||'').slice(0,25)}</span><span style="color:var(--muted);font-size:11px">${s.reviews}★</span>${kLink(s.name,s.brand,true,s.vetka,s.kod)}</div>`).join(''),
         });
       }
@@ -4740,10 +4821,11 @@ async function renderTactics(){
       // 5. ABC-A item at risk (low reviews or falling share)
       const aAtRisk = ourAItems.filter(x=>!x.reviews||x.reviews<5)[0];
       if(aAtRisk){
+        const _bt5 = applyVetkaBoost([aAtRisk], aAtRisk.revenue*0.2, strat);
         opps.push({
-          impact: aAtRisk.revenue*0.2, urgency:'yellow',
+          impact: _bt5.impact, urgency:'yellow',
           label: `A-товар без отзывов — риск потери позиции`,
-          detail: `${(aAtRisk.name||aAtRisk.brand||'').slice(0,50)} генерирует ${fmtR(aAtRisk.revenue)}`,
+          detail: `${(aAtRisk.name||aAtRisk.brand||'').slice(0,50)} генерирует ${fmtR(aAtRisk.revenue)}${_bt5.note?' · 🔥 точка роста по рынку':''}`,
           links: `<div style="display:inline-flex;align-items:center;gap:3px;background:var(--s2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;font-size:11px;white-space:nowrap"><span>${(aAtRisk.name||aAtRisk.brand||'').slice(0,35)}</span>${kLink(aAtRisk.name,aAtRisk.brand,true,'',aAtRisk.kod||'')}</div>`,
         });
       }

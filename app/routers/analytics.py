@@ -225,7 +225,8 @@ async def get_abc(
         item = {"name": s["name"] or s["kod"], "brand": s["brand"],
                 "kod": s.get("kod") or "",
                 "revenue": s.get("_revenue_sum", s["revenue"]),
-                "units": s.get("_units_sum", s["units"]), "abc": abc}
+                "units": s.get("_units_sum", s["units"]), "abc": abc,
+                "vetka": s.get("vetka") or "—"}
         if abc == "A":
             our_a_items.append(item)
         elif abc == "C":
