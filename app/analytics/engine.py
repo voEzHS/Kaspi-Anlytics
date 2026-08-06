@@ -2156,6 +2156,19 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         # только после реального моста SKU(CRM) <-> kod(Kaspi-листинг).
         kaspi_divergence = None
 
+        # 07.08 — цель роли "директор по продажам": максимизировать СУММУ
+        # продаж, не штуки. Тир T1-T4 остаётся честным сигналом "есть ли
+        # риск дефицита по факту" (не трогаем — иначе теряем понятность
+        # "почему это T1"), но ранжирование ВНУТРИ тира было по штукам
+        # (-suggest_qty), из-за чего дешёвая мелочь (овощерезки, костерезки
+        # и т.п.) визуально соревновалась с холодильным/морозильным
+        # оборудованием, которое реально двигает сумму плана. Цена ("Цена"
+        # из остатков CRM) уже была в базе, но нигде не читалась в v1/v2 —
+        # довожу её до items и считаю revenue_potential = цена × Купить,
+        # это и есть новый первичный критерий сортировки внутри тира.
+        price = st.get("price") or 0
+        revenue_potential = round(price * suggest_qty, 0) if suggest_qty > 0 else 0
+
         item = {
             "sku": sku, "name": d["name"], "category": d["category"], "subgroup": d["subgroup"],
             "status": st.get("status"),
@@ -2164,6 +2177,7 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             "near_pipeline": near_pipeline, "far_pipeline": far_pipeline,
             "cover_months": cover_months, "cover_months_full": cover_months_full,
             "tier": tier, "suggest_qty": suggest_qty,
+            "price": round(price, 0), "revenue_potential": revenue_potential,
             "season_note": season_note, "season_conflict": season_conflict,
             "wholesale_pattern": {"total_13mo": round(wholesale_total, 0), "recent_orders": wholesale_orders}
                                   if wholesale_orders else None,
@@ -2185,7 +2199,13 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
                 it["made_to_order_group"] = True
 
     TIER_ORDER = {"T1_CRITICAL": 0, "T2_PIPELINE": 1, "T3A_LISTING": 2, "T3B_LOWPRI": 3, "T4_OK": 4}
-    items.sort(key=lambda it: (TIER_ORDER.get(it["tier"], 9), -it["suggest_qty"], -it["mvel_retail"]))
+    # Сортировка внутри тира — по ₸-потенциалу (цена × Купить), не по штукам:
+    # это и есть ответ на вопрос "что реально двигает сумму продаж" внутри
+    # одного уровня срочности. Штуки (-suggest_qty) и скорость (-mvel_retail)
+    # остаются вторым/третьим критерием — разводят позиции без цены (напр.
+    # SKU без "Цена" в CRM, см. фикс от 06.08 про "Не указано").
+    items.sort(key=lambda it: (TIER_ORDER.get(it["tier"], 9), -it["revenue_potential"],
+                                -it["suggest_qty"], -it["mvel_retail"]))
 
     return {
         "items": items,
