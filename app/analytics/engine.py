@@ -1028,6 +1028,15 @@ def calc_monthly_trends(rows: list[dict], our_brands: set[str]) -> dict:
         peak = max(monthly_overview, key=lambda x: x["revenue"])
         peak_month_name = _month_name(peak["month"])
         peak_idx = MONTH_ORDER.index(peak_month_name) if peak_month_name in MONTH_ORDER else -1
+        # БАГ 06.08 (директорский аудит): пик — это просто max() по загруженным
+        # месяцам, без разбора "это реально пик" vs "это последний загруженный
+        # месяц, а сезон мог и не закончиться". Если peak — последний элемент
+        # monthly_overview, мы НЕ знаем, что было дальше (следующих месяцев
+        # просто нет в базе) — заявлять "летний пик" уверенным тоном в этом
+        # случае неверно: сайт может отставать от календаря на недели, и
+        # реальный пик ещё может быть впереди. Формулировка смягчена, только
+        # если данные реально обрываются на пике (не на более позднем спаде).
+        is_last_loaded_month = peak is monthly_overview[-1] and len(monthly_overview) >= 1
         if peak_idx in (3, 4):   # Апрель, Май
             peak_comment = "Пик типичен для сезона охлаждения."
         elif peak_idx in (5, 6, 7):  # Июнь–Август
@@ -1036,6 +1045,10 @@ def calc_monthly_trends(rows: list[dict], our_brands: set[str]) -> dict:
             peak_comment = "Пик в период распродаж и новогоднего сезона."
         else:
             peak_comment = ""
+        if is_last_loaded_month and peak_comment:
+            peak_comment = (f"{peak_comment} Внимание: это последний загруженный месяц — "
+                             f"неизвестно, продолжится ли рост дальше, если данные за "
+                             f"следующие месяцы ещё не загружены.")
         insights.append({"type": "info", "text": f"Пик рынка — {peak['month']} ({peak['revenue']/1e6:.0f} млн ₸). {peak_comment}".strip()})
         first_o, last_o = monthly_overview[0], monthly_overview[-1]
         rev_growth = round(safe_div(last_o["revenue"] - first_o["revenue"], first_o["revenue"]) * 100, 1)
