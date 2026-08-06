@@ -1051,7 +1051,7 @@ textarea.inp::placeholder{color:var(--muted)}
       <div id="zk-ct" style="display:none">
         <div id="zk-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px"></div>
         <div id="zk-mto"></div>
-        <div class="sec" style="margin-bottom:16px">
+        <div class="sec" data-sr="1" style="margin-bottom:16px">
           <div class="sh" style="flex-wrap:wrap;gap:8px">
             <span class="st"><i class="ti ti-list-check" style="color:var(--yellow)"></i> План закупа по тирам</span>
             <div id="zk-scope-bar" style="display:flex;gap:5px;flex-wrap:wrap"></div>
@@ -1615,9 +1615,16 @@ function typewriterEl(el,text,speed=20){
 
 // ── SCROLL REVEAL (auto-observes new .sec elements via MutationObserver) ─
 function initScrollReveal(){
+  // БАГ 06.08 (Закуп v2): threshold считается от bounding box самого target,
+  // не от viewport. Секция с таблицей на ~1000+ строк (напр. «План закупа
+  // по тирам» при широком охвате) может быть высотой в десятки тысяч px —
+  // видимый кусок в 6% её собственной высоты никогда не наберётся, значит
+  // isIntersecting никогда не станет true и секция замирает на opacity:0
+  // навсегда. threshold:0 (сработает от первого же пересечённого пикселя)
+  // не зависит от высоты target — фиксит и этот, и любой будущий похожий кейс.
   const io=new IntersectionObserver(entries=>{
     entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('revealed');io.unobserve(e.target);}});
-  },{threshold:.06,rootMargin:'50px 0px -20px 0px'});
+  },{threshold:0,rootMargin:'50px 0px -20px 0px'});
   function scan(){
     document.querySelectorAll('.sec:not([data-sr])').forEach(el=>{
       el.setAttribute('data-sr','1');
@@ -3455,7 +3462,12 @@ function renderZkTable(){
     return `<tr>
       <td>${badge}</td>
       <td style="font-family:monospace;font-size:12px;color:var(--muted)">${it.sku||'—'}</td>
-      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(it.name||'')}">${it.name||'—'}${flags}</td>
+      <td style="max-width:240px" title="${escHtml(it.name||'')}">
+        <div style="display:flex;align-items:center;max-width:240px">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto">${it.name||'—'}</span>
+          ${flags}
+        </div>
+      </td>
       <td style="color:var(--muted);font-size:12px" title="${it.subgroup||''}">${it.category||'—'}</td>
       <td>${scopeBadge}</td>
       <td style="text-align:right">${it.mvel_retail}</td>
