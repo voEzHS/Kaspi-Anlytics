@@ -2012,6 +2012,27 @@ def _procurement_classify_v2(mvel_retail, kaspi_stock, near_pipeline, far_pipeli
     return tier, cover_months, cover_months_full
 
 
+# 08.08 — 8 SKU в T1/T2 с пустым "Название" в файле экспорта (не баг парсера
+# — проверено, поле реально пустое в CRM, сама CRM помечает их внутренним
+# тегом "NONAME"). Найдено и решено директорским аудитом: зашёл в CRM
+# (Склад → Товары, поиск по артикулу) и вручную посмотрел карточку каждого
+# — у всех 8 есть настоящее описание модели, просто не попадающее в
+# "Название" при выгрузке. Это заплатка на ТЕКУЩИЙ снимок данных (08.08),
+# не постоянное решение — при новой выгрузке с другими пустыми SKU нужно
+# повторить руками; корневая причина (пустая колонка "Название" в CRM для
+# этих карточек) лежит на стороне CRM, не чинится кодом дашборда.
+MANUAL_NAME_OVERRIDES = {
+    "8300376": "Холодильный шкаф (LSC-2d), серый",
+    "8300382": "Холодильная витрина (LSC-3d), белый",
+    "8300389": "Морозильный шкаф (LSC-2d), белый",
+    "8300410": "Холодильный шкаф (LSC-2d), белый",
+    "8300431": "Холодильная витрина (LSC-2d), белый",
+    "8300381": "Бонета, серый",
+    "8300372": "Комбинированная тумба 150х60, серый",
+    "8300394": "Комбинированная тумба 150х60, серый",
+}
+
+
 def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: list[dict],
                          scope_categories: Optional[set] = None) -> dict:
     """
@@ -2243,8 +2264,9 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         price = st.get("price") or 0
         revenue_potential = round(price * suggest_qty, 0) if suggest_qty > 0 else 0
 
+        resolved_name = MANUAL_NAME_OVERRIDES.get(sku) or d["name"]
         item = {
-            "sku": sku, "name": d["name"], "category": d["category"], "subgroup": d["subgroup"],
+            "sku": sku, "name": resolved_name, "category": d["category"], "subgroup": d["subgroup"],
             "status": st.get("status"),
             "mvel_retail": round(mvel_retail, 2),
             "kaspi_stock": kaspi_stock,
