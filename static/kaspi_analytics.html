@@ -234,6 +234,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .tb-dept.dr{background:rgba(63,185,80,.12);color:var(--green);border:1px solid rgba(63,185,80,.35)}
 .tb-dept.do{background:rgba(232,135,30,.12);color:var(--oven);border:1px solid rgba(232,135,30,.35)}
 .tb-dept.di{background:rgba(34,211,238,.12);color:var(--icemk);border:1px solid rgba(34,211,238,.35)}
+.tb-dept.zk-all{background:rgba(210,153,34,.12);color:var(--yellow);border:1px solid rgba(210,153,34,.35)}
 
 select.sel,select.fsel{background:var(--s2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:var(--r);font-size:13px;font-family:inherit;cursor:pointer;transition:border-color .15s}
 select.sel:focus,select.fsel:focus{outline:none;border-color:var(--blue)}
@@ -1051,6 +1052,7 @@ textarea.inp::placeholder{color:var(--muted)}
       <div id="zk-ct" style="display:none">
         <div id="zk-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px"></div>
         <div id="zk-mto"></div>
+        <div id="zk-dups"></div>
         <div class="sec" data-sr="1" style="margin-bottom:16px">
           <div class="sh" style="flex-wrap:wrap;gap:8px">
             <span class="st"><i class="ti ti-list-check" style="color:var(--yellow)"></i> План закупа по тирам</span>
@@ -1866,6 +1868,25 @@ function showPage(name){
   const hidePeriod = name==='upload'||name==='settings'||name==='zakup';
   const pb=g('period-bar');
   if(pb)pb.style.display=hidePeriod?'none':'';
+  // 08.08 root-cause фикс доверия: бейдж отдела наверху (tb-dept) раньше
+  // всегда показывал текущий отдел (напр. «Морозильники»), даже на Закуп —
+  // хотя calc_procurement_v2 считает по ВСЕМУ каталогу CRM и переключатель
+  // отдела наверху на него никак не влияет (см. calc_procurement_v2
+  // docstring). Директор мог решить, что видит план закупа именно по
+  // выбранному отделу — это неправда, бейдж обязан говорить правду.
+  const bd=g('tb-dept');
+  if(bd){
+    if(name==='zakup'){
+      bd.className='tb-dept zk-all';
+      bd.innerHTML='<i class="ti ti-list-details" style="font-size:12px"></i> Весь каталог CRM';
+      bd.title='Закуп считается по всему каталогу CRM, не только по выбранному вверху отделу — переключатель отдела сюда не влияет. Используйте фильтр охвата (Ядро/Расширенный/Показать всё) внутри вкладки.';
+    } else {
+      const meta=DMAP[A.dept]||DMAP.frz;
+      bd.className='tb-dept d'+meta.letter;
+      bd.innerHTML=`<span class="dd dd-${meta.letter}"></span>${DL[A.dept]}`;
+      bd.title='';
+    }
+  }
   updatePageTitle(name);
   renderActive();
   if(hidePeriod){const ti=g('top-insight');if(ti)ti.style.display='none';}
@@ -2114,9 +2135,16 @@ function setDept(d){
   });
   moveDeptIndicator();
   const bd=g('tb-dept');
-  const meta=DMAP[d]||DMAP.frz;
-  bd.className='tb-dept d'+meta.letter;
-  bd.innerHTML=`<span class="dd dd-${meta.letter}"></span>${DL[d]}`;
+  // 08.08 — не затираем честный бейдж "Весь каталог CRM" на Закуп при
+  // переключении отдела верхней навигацией (см. showPage) — Закуп от
+  // отдела не зависит, а если бы затирали, бейдж бы врал ровно после
+  // переключения отдела, оставаясь на месте до следующего showPage().
+  const onZakup = document.querySelector('.nb.active')?.dataset.p === 'zakup';
+  if(!onZakup){
+    const meta=DMAP[d]||DMAP.frz;
+    bd.className='tb-dept d'+meta.letter;
+    bd.innerHTML=`<span class="dd dd-${meta.letter}"></span>${DL[d]}`;
+  }
   // Glitch logo icon on department switch
   const lic=document.querySelector('.logo-ic');
   if(lic){lic.classList.remove('glitching');void lic.offsetWidth;lic.classList.add('glitching');setTimeout(()=>lic.classList.remove('glitching'),500);}
@@ -3317,6 +3345,12 @@ const ZK_TIER={
   // ни ближайшие 3 месяца индекса не показывают восстановления спроса,
   // такие позиции уходят сюда отдельным тиром — закуп не рекомендуется.
   T2S_SEASON_OFF:{label:'T2s',full:'T2s · Сезон закончился',color:'var(--purple)',hint:'по скорости выглядит срочно, но сезон уже кончился — не закупать'},
+  // 08.08 root-cause фикс: категории ≥80% без физического стока — "под
+  // заказ", 2-месячный складской буфер им не подходит. suggest_qty=0
+  // (нет данных о реальном лид-тайме/MOQ поставщика под заказ), но спрос
+  // (mvel_retail) остаётся видимым — это не "не продаётся", это другая
+  // модель поставки.
+  T2M_MADE_TO_ORDER:{label:'T2m',full:'T2m · Под заказ',color:'var(--ice)',hint:'нет физ. стока в норме для категории — складской буфер не считаем, нужна ручная логика лид-тайма'},
   T3A_LISTING:{label:'T3a',full:'T3a · Не продаётся',color:'var(--blue)',hint:'сток есть, розничных продаж нет'},
   T3B_LOWPRI:{label:'T3b',full:'T3b · Низкий приоритет',color:'var(--muted)',hint:'не продаётся и стока нет'},
   T4_OK:{label:'T4',full:'T4 · Норма',color:'var(--green)',hint:'стока достаточно'},
@@ -3390,7 +3424,7 @@ async function renderZakup(){
       </div>`;
     };
     g('zk-summary').innerHTML=
-      tierCard('T1_CRITICAL')+tierCard('T2_PIPELINE')+tierCard('T2S_SEASON_OFF')+tierCard('T3A_LISTING')+tierCard('T3B_LOWPRI')+tierCard('T4_OK')+
+      tierCard('T1_CRITICAL')+tierCard('T2_PIPELINE')+tierCard('T2S_SEASON_OFF')+tierCard('T2M_MADE_TO_ORDER')+tierCard('T3A_LISTING')+tierCard('T3B_LOWPRI')+tierCard('T4_OK')+
       `<div style="background:var(--s1);border:1px solid rgba(210,153,34,.4);border-top:3px solid var(--yellow);border-radius:10px;padding:14px 16px">
         <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px"><i class="ti ti-shopping-cart" style="font-size:11px"></i> Потенциал закупа, ₸</div>
         <div style="font-size:22px;font-weight:800;color:var(--yellow)">${fmtR(totalRevenuePotential)}</div>
@@ -3401,7 +3435,17 @@ async function renderZakup(){
     g('zk-mto').innerHTML=mtoGroups.map(gr=>`
       <div style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text);background:rgba(163,113,247,.08);border:1px solid rgba(163,113,247,.3);border-radius:8px;padding:10px 14px;margin-bottom:8px">
         <i class="ti ti-alert-triangle" style="color:var(--purple);font-size:15px;flex-shrink:0;margin-top:1px"></i>
-        <span><b>«${gr.category}»</b> — похоже на «под заказ»: ${gr.zero_stock_count} из ${gr.sku_count} SKU (${Math.round(gr.zero_stock_share*100)}%) без физического стока. Обычная логика покрытия здесь может ошибаться — проверить вручную, прежде чем закупать по этой таблице.</span>
+        <span><b>«${gr.category}»</b> — похоже на «под заказ»: ${gr.zero_stock_count} из ${gr.sku_count} SKU (${Math.round(gr.zero_stock_share*100)}%) без физического стока. Переведено в тир <b>T2m · Под заказ</b> — складской буфер по этой категории не считается (нет данных о реальном лид-тайме/MOQ у поставщика), купить = 0. Спрос виден в колонке «Прод./мес», но количество к закупу нужно определять вручную.</span>
+      </div>`).join('');
+
+    // 08.08 — возможные задвоенные карточки (см. комментарий в engine.py у
+    // possible_duplicates): не мержим и не выбираем "правильный" SKU
+    // автоматически, просто показываем группой для ручной проверки в CRM.
+    const dupGroups=proc.possible_duplicates||[];
+    g('zk-dups').innerHTML=dupGroups.map(gr=>`
+      <div style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text);background:rgba(96,184,212,.08);border:1px solid rgba(96,184,212,.3);border-radius:8px;padding:10px 14px;margin-bottom:8px">
+        <i class="ti ti-copy" style="color:var(--ice);font-size:15px;flex-shrink:0;margin-top:1px"></i>
+        <span><b>«${gr.name}»</b> — одинаковое название+цена (${fmtR(gr.price)}) под ${gr.skus.length} разными SKU (${gr.skus.join(', ')}): суммарно ${fmtN(gr.total_suggest_qty)} шт на ${fmtR(gr.total_revenue_potential)}. Может быть реальные варианты (цвет/комплектация не в названии) или задвоенная карточка в CRM — проверить в CRM перед закупом, иначе риск заказать в разы больше нужного.</span>
       </div>`).join('');
 
     const monthsNote=g('zk-months-note');
@@ -3469,11 +3513,17 @@ function renderZkTable(){
     // товары (статус "Продается", есть цена), но без имени купить по
     // рекомендации нельзя — нужно сначала найти SKU в CRM руками. Раньше
     // это тонуло в общей таблице неотличимо от обычных строк.
-    const noName = !it.name || !it.name.trim() || it.name.trim().toLowerCase()==='не указано';
+    // Защита от падения рендера: name может прийти числом из CRM (не
+    // только строкой) — .trim() на числе рушит всю таблицу, найдено при
+    // фиксе 08.08 (та же природа, что и AttributeError в engine.py на
+    // возможных дублях — не строковое имя).
+    const nameStr = String(it.name==null?'':it.name);
+    const noName = !nameStr.trim() || nameStr.trim().toLowerCase()==='не указано';
     let flags='';
     if(noName) flags+=`<i class="ti ti-help-octagon" title="В CRM нет названия для этого SKU (ни в остатках, ни в продажах) — прежде чем закупать, найди товар в CRM по артикулу и уточни, что это." style="color:var(--red);font-size:12px;margin-left:5px"></i>`;
     if(it.season_conflict) flags+=`<i class="ti ti-sun-off" title="Сезонный индекс месяца ×${it.season_note?.month_index} — похоже на сезонный спад, не дефицит. Проверить перед закупом." style="color:var(--yellow);font-size:12px;margin-left:5px"></i>`;
-    if(it.made_to_order_group) flags+=`<i class="ti ti-package" title="Категория похожа на «под заказ» — см. предупреждение выше" style="color:var(--purple);font-size:12px;margin-left:5px"></i>`;
+    if(it.made_to_order_group) flags+=`<i class="ti ti-package" title="Категория похожа на «под заказ» — переведено в тир T2m, купить=0" style="color:var(--purple);font-size:12px;margin-left:5px"></i>`;
+    if(it.possible_duplicate_skus&&it.possible_duplicate_skus.length) flags+=`<i class="ti ti-copy" title="Возможный дубль карточки — то же название+цена под SKU: ${it.possible_duplicate_skus.join(', ')}. Проверить в CRM перед закупом." style="color:var(--ice);font-size:12px;margin-left:5px"></i>`;
     if(it.kaspi_divergence) flags+=`<i class="ti ti-alert-triangle" title="Kaspi-канал в файле продаж (${it.kaspi_divergence.file_kaspi_units} шт) расходится с загрузкой сайта (${it.kaspi_divergence.site_kaspi_units} шт) на ${it.kaspi_divergence.diff_pct}%" style="color:var(--red);font-size:12px;margin-left:5px"></i>`;
     const pipeTitle=`Близко (≤15д, отправлено с завода): ${fmtN(it.near_pipeline)} · Далеко (заказано, до ${TARGET_COVER_DAYS_LABEL}): ${fmtN(it.far_pipeline)}`;
     const wp=it.wholesale_pattern;

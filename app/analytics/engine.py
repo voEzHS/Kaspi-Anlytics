@@ -2090,9 +2090,40 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         if k:
             stock_by_sku[k] = s
 
+    # 08.08 — «под заказ» категории определяются ЗАРАНЕЕ, отдельным проходом,
+    # ДО расчёта тира/suggest_qty (не после, как было). Раньше
+    # made_to_order_group был чисто декоративным флагом поверх уже
+    # посчитанного 2-месячного складского буфера — то есть система всё равно
+    # советовала "купи 20 шт на склад" для категории, где 96% SKU физически
+    # не лежат на складе (сделано под заказ). Директорский аудит 08.08: 3 из
+    # топ-4 позиций T1 по ₸-потенциалу были из «Гастрономы и кондитерки»
+    # (96% нулевого стока) — тот же класс ошибки, что и сезонный баг с
+    # фризерами: тир считается по модели (складской буфер), которая не
+    # подходит категории.
+    cat_group_skus: dict[str, list[str]] = defaultdict(list)
+    for sku, d in per_sku.items():
+        if stock_by_sku.get(sku) is None:
+            continue
+        cat_group_skus[d["category"]].append(sku)
+
+    made_to_order_categories: set[str] = set()
+    made_to_order_groups = []
+    for cat, skus in cat_group_skus.items():
+        if len(skus) < 3:
+            continue
+        zero_stock = sum(
+            1 for s in skus
+            if ((stock_by_sku[s].get("wh_pervomay") or 0) + (stock_by_sku[s].get("wh_astana") or 0)
+                + (stock_by_sku[s].get("wh_shymkent") or 0)) <= 0
+        )
+        share = zero_stock / len(skus)
+        if share >= 0.8:
+            made_to_order_categories.add(cat)
+            made_to_order_groups.append({"category": cat, "sku_count": len(skus),
+                                          "zero_stock_count": zero_stock, "zero_stock_share": round(share, 2)})
+
     items = []
     no_stock_data = []
-    cat_groups: dict[str, list] = defaultdict(list)
 
     for sku, d in per_sku.items():
         total_retail = sum(d["retail_by_month"].values())
@@ -2161,6 +2192,18 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         if season_suppressed:
             tier = "T2S_SEASON_OFF"
 
+        is_made_to_order = d["category"] in made_to_order_categories
+        if is_made_to_order and tier in ("T1_CRITICAL", "T2_PIPELINE"):
+            # Категория живёт "под заказ" (см. комментарий у
+            # made_to_order_categories выше) — 2-месячный складской буфер
+            # здесь не имеет смысла. Спрос реальный (виден по mvel_retail),
+            # но "купи N штук на склад" — неверная рекомендация для модели
+            # без склада. Не гадаем правильное количество (нет данных о
+            # реальном лид-тайме/MOQ у поставщика под заказ) — честно
+            # показываем suggest_qty=0 и оставляем скорость продаж как
+            # сигнал спроса, а не как "купи ровно столько".
+            tier = "T2M_MADE_TO_ORDER"
+
         target_units = (TARGET_COVER_DAYS / 30.0) * mvel_retail
         need = target_units - kaspi_stock - near_pipeline - far_pipeline
         suggest_qty = max(0, math.ceil(need)) if tier in ("T1_CRITICAL", "T2_PIPELINE") else 0
@@ -2213,24 +2256,42 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             "wholesale_pattern": {"total_13mo": round(wholesale_total, 0), "recent_orders": wholesale_orders}
                                   if wholesale_orders else None,
             "kaspi_divergence": kaspi_divergence,
+            "made_to_order_group": is_made_to_order,
         }
         items.append(item)
-        cat_groups[d["category"]].append(item)
 
-    made_to_order_groups = []
-    for cat, group in cat_groups.items():
-        if len(group) < 3:
+    # 08.08 — обнаружение возможных задвоенных карточек: одинаковое
+    # название+цена+категория под разными SKU в T1/T2. Не можем отличить
+    # "это правда разные варианты (цвет/комплектация не в названии)" от
+    # "карточка продублирована в CRM" по имеющимся данным — не мержим и не
+    # душим автоматически, просто группируем для ручной проверки в CRM перед
+    # закупом (см. философию файла: не глушим молча). Найдено директорским
+    # аудитом 08.08: «Кондитерская витрина Cake 1.5 +2/+7» под 3 разными SKU
+    # (9303199/9313199/9323199) — 13 шт, 6.27М₸ суммарно.
+    dup_key_map: dict[tuple, list] = defaultdict(list)
+    for it in items:
+        nm = str(it["name"] or "").strip().lower()
+        if not nm or nm == "не указано":
             continue
-        zero_stock = sum(1 for it in group if it["kaspi_stock"] <= 0)
-        share = zero_stock / len(group)
-        if share >= 0.8:
-            made_to_order_groups.append({"category": cat, "sku_count": len(group),
-                                          "zero_stock_count": zero_stock, "zero_stock_share": round(share, 2)})
-            for it in group:
-                it["made_to_order_group"] = True
+        if it["tier"] not in ("T1_CRITICAL", "T2_PIPELINE"):
+            continue
+        dup_key_map[(nm, it["price"], it["category"])].append(it)
 
-    TIER_ORDER = {"T1_CRITICAL": 0, "T2_PIPELINE": 1, "T2S_SEASON_OFF": 2,
-                  "T3A_LISTING": 3, "T3B_LOWPRI": 4, "T4_OK": 5}
+    possible_duplicates = []
+    for (nm, price, cat), group in dup_key_map.items():
+        if len(group) < 2:
+            continue
+        skus = [it["sku"] for it in group]
+        possible_duplicates.append({
+            "name": group[0]["name"], "category": cat, "price": price, "skus": skus,
+            "total_suggest_qty": sum(it["suggest_qty"] for it in group),
+            "total_revenue_potential": sum(it["revenue_potential"] for it in group),
+        })
+        for it in group:
+            it["possible_duplicate_skus"] = [s for s in skus if s != it["sku"]]
+
+    TIER_ORDER = {"T1_CRITICAL": 0, "T2_PIPELINE": 1, "T2S_SEASON_OFF": 2, "T2M_MADE_TO_ORDER": 3,
+                  "T3A_LISTING": 4, "T3B_LOWPRI": 5, "T4_OK": 6}
     # Сортировка внутри тира — по ₸-потенциалу (цена × Купить), не по штукам:
     # это и есть ответ на вопрос "что реально двигает сумму продаж" внутри
     # одного уровня срочности. Штуки (-suggest_qty) и скорость (-mvel_retail)
@@ -2242,6 +2303,7 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
     return {
         "items": items,
         "made_to_order_groups": made_to_order_groups,
+        "possible_duplicates": sorted(possible_duplicates, key=lambda x: -x["total_revenue_potential"]),
         "no_stock_data": sorted(no_stock_data, key=lambda x: -x["mvel_retail"])[:50],
         "months_used": sorted(months_used_labels, key=_month_sort_key),
         "counts": {t: sum(1 for it in items if it["tier"] == t) for t in TIER_ORDER},
@@ -2263,6 +2325,14 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             "не откалиброван статистически — эмпирический, проверен на фризерах для "
             "мороженого); категориям с историей <6 разных календарных месяцев индекс не "
             "считается вовсе, и подавление не сработает — тир останется как есть",
+            "Тир T2M (под заказ) подавляет T1/T2 для категорий с ≥80% SKU без физического "
+            "стока (порог из made_to_order_groups, не откалиброван) — suggest_qty=0, "
+            "т.к. неизвестен реальный лид-тайм/MOQ поставщика под заказ; mvel_retail "
+            "остаётся честным сигналом спроса, просто не переводится в 'купи N шт на склад'",
+            "possible_duplicates — SKU с одинаковым названием+ценой+категорией в T1/T2: "
+            "может быть реальный вариант (цвет/комплектация не в названии) или "
+            "задвоенная карточка в CRM — не различить по имеющимся данным, проверять "
+            "вручную перед закупом, иначе есть риск заказать в 2-3 раза больше нужного",
         ],
     }
 
