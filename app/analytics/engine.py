@@ -2124,15 +2124,24 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         wholesale_orders = sorted(d["wholesale_orders"], key=lambda o: o["date"])[-5:]
         wholesale_total = sum(o["qty"] for o in d["wholesale_orders"])
 
+        # ОТКЛЮЧЕНО 06.08 — родовой баг, не откалиброванный порог. Найдено
+        # директорским аудитом прямо на живых данных прода: site_kaspi_by_sku
+        # ключуется по sku_key() -> приоритет "kod" из KaspiRow — это код
+        # ЛИСТИНГА KASPI (напр. "119264283"), а kaspi_channel_by_sku ключуется
+        # по CRM "SKU" из транзакционной выгрузки (напр. "9304067") — ДРУГОЕ
+        # пространство идентификаторов, между ними нет моста в имеющихся
+        # данных. Проверено на 3/3 реальных примерах ("MUXXED SD/SC-105Y",
+        # "Friggier LSC-145W", "AOLIEGE BC/BD 601") — все активно продаются
+        # на Kaspi по данным самого сайта (12/9/7, 59/18, 6 шт по месяцам),
+        # но из-за несовпадения кода получали file=X/site=0/100% — то есть
+        # ложный сигнал "нет в Kaspi" на товарах, которые там реально есть.
+        # Из 351 сработавших на проде divergence-флагов 272 вообще вне 4
+        # отделов сайта (site_kaspi_by_sku тривиально пуст), у оставшихся 79
+        # — 100% site=0, что для активно продающихся SKU статистически
+        # невозможно без ошибки ключа. Показывать заведомо ложный "красный
+        # флаг" хуже, чем не показывать сигнал вообще — включать обратно
+        # только после реального моста SKU(CRM) <-> kod(Kaspi-листинг).
         kaspi_divergence = None
-        kc = kaspi_channel_by_sku.get(sku, 0)
-        sk = site_kaspi_by_sku.get(sku, 0)
-        base = max(kc, sk)
-        if base > 0:
-            diff = abs(kc - sk) / base
-            if diff > KASPI_DIVERGENCE_THRESHOLD:
-                kaspi_divergence = {"file_kaspi_units": round(kc, 1), "site_kaspi_units": round(sk, 1),
-                                     "diff_pct": round(diff * 100)}
 
         item = {
             "sku": sku, "name": d["name"], "category": d["category"], "subgroup": d["subgroup"],
@@ -2180,7 +2189,10 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             "Дата размещения заказа (2_ordered) неизвестна — 45 дней это верхняя граница, не точный расчёт",
             "Плечо Первомай → Астана/Шымкент/Туздыбастау не оценено, буфер его не учитывает",
             "Статус канала «Айдын Опт» (независимый дилер или связанная структура) не подтверждён",
-            "Порог расхождения Kaspi vs CRM (20%) — прикидка, не откалиброван на повторных загрузках",
+            "Сверка Kaspi-канала файла с загрузкой сайта отключена: код Kaspi-листинга "
+            "(kod, напр. 119264283) и SKU CRM (напр. 9304067) — разные пространства "
+            "идентификаторов без моста в текущих данных; включать только после "
+            "реального сопоставления SKU↔kod",
         ],
     }
 
