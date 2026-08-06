@@ -3312,6 +3312,11 @@ async function _doDeleteChannelSales(){
 const ZK_TIER={
   T1_CRITICAL:{label:'T1',full:'T1 · Критично',color:'var(--red)',hint:'продаётся, стока < буфера, пайплайна нет'},
   T2_PIPELINE:{label:'T2',full:'T2 · В пути',color:'var(--yellow)',hint:'едет/заказано — проверить, хватит ли'},
+  // 07.08 root-cause фикс: раньше T1/T2 по трейлинг-скорости не подавлялись
+  // сезонностью — только помечались значком поверх. Теперь если ни текущий,
+  // ни ближайшие 3 месяца индекса не показывают восстановления спроса,
+  // такие позиции уходят сюда отдельным тиром — закуп не рекомендуется.
+  T2S_SEASON_OFF:{label:'T2s',full:'T2s · Сезон закончился',color:'var(--purple)',hint:'по скорости выглядит срочно, но сезон уже кончился — не закупать'},
   T3A_LISTING:{label:'T3a',full:'T3a · Не продаётся',color:'var(--blue)',hint:'сток есть, розничных продаж нет'},
   T3B_LOWPRI:{label:'T3b',full:'T3b · Низкий приоритет',color:'var(--muted)',hint:'не продаётся и стока нет'},
   T4_OK:{label:'T4',full:'T4 · Норма',color:'var(--green)',hint:'стока достаточно'},
@@ -3385,7 +3390,7 @@ async function renderZakup(){
       </div>`;
     };
     g('zk-summary').innerHTML=
-      tierCard('T1_CRITICAL')+tierCard('T2_PIPELINE')+tierCard('T3A_LISTING')+tierCard('T3B_LOWPRI')+tierCard('T4_OK')+
+      tierCard('T1_CRITICAL')+tierCard('T2_PIPELINE')+tierCard('T2S_SEASON_OFF')+tierCard('T3A_LISTING')+tierCard('T3B_LOWPRI')+tierCard('T4_OK')+
       `<div style="background:var(--s1);border:1px solid rgba(210,153,34,.4);border-top:3px solid var(--yellow);border-radius:10px;padding:14px 16px">
         <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px"><i class="ti ti-shopping-cart" style="font-size:11px"></i> Потенциал закупа, ₸</div>
         <div style="font-size:22px;font-weight:800;color:var(--yellow)">${fmtR(totalRevenuePotential)}</div>

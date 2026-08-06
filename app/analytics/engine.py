@@ -2112,27 +2112,58 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         tier, cover_months, cover_months_full = _procurement_classify_v2(
             mvel_retail, kaspi_stock, near_pipeline, far_pipeline)
 
-        target_units = (TARGET_COVER_DAYS / 30.0) * mvel_retail
-        need = target_units - kaspi_stock - near_pipeline - far_pipeline
-        suggest_qty = max(0, math.ceil(need)) if tier in ("T1_CRITICAL", "T2_PIPELINE") else 0
-
         season_note = None
         season_conflict = False
+        season_suppressed = False
         cur_month = months_used[-1][1] if months_used else None
         cat_season = seasonality.get(d["category"])
         if cat_season and cur_month:
             idx = cat_season.get(cur_month)
             if idx is not None:
                 season_note = {"month_index": idx}
-                # Тир/suggest_qty считаются по трейлинг-скорости — она может
-                # ещё "помнить" пик сезона, даже когда сам сезон уже кончился
-                # (см. документ: ровно так фризеры для мороженого весной-летом
-                # неверно попадали в T1 в ручном плане до root-cause фикса
-                # v8). Индекс <0.4 = явный сезонный спад — не глушим тир
-                # молча (могли ошибиться в подсчёте индекса), а помечаем
-                # явным конфликтом поверх прозрачного расчёта.
+                # Тир считается по трейлинг-скорости — она может ещё
+                # "помнить" пик сезона, даже когда сам сезон уже кончился
+                # (ровно так фризеры для мороженого весной-летом неверно
+                # попадали в T1 в ручном плане до root-cause фикса v8).
+                # Индекс <0.4 = явный сезонный спад — сначала просто ставим
+                # флаг для прозрачности.
                 if idx < 0.4 and tier in ("T1_CRITICAL", "T2_PIPELINE"):
                     season_conflict = True
+                    # 07.08 root-cause fix — до этого момента конфликт был
+                    # ТОЛЬКО декоративным флагом: тир и suggest_qty
+                    # оставались как есть, то есть система всё равно
+                    # рекомендовала "срочно закупить" ровно тогда, когда
+                    # директор объяснил (не первый раз), что сезон кончился
+                    # и закупать не нужно. Это тот же баг, что чинили один
+                    # раз офлайн-скриптом (v8, "исключить фризеры из ACTIVE
+                    # тиринга") — но фикс не перенесли в живой движок Закуп
+                    # v2 при его постройке, и он вернулся сюда через
+                    # ревенью-сортировку (дорогой сезонный товар с раздутой
+                    # трейлинг-скоростью взлетел на #1 по ₸-потенциалу).
+                    #
+                    # Не душим по одному "низкому" месяцу — если сезон
+                    # вот-вот начнётся (напр. январь перед мартовским
+                    # стартом фризеров), forward-outlook (макс индекс из
+                    # текущего + ближайших 3 месяцев) это увидит и НЕ
+                    # подавит закуп. Подавляем только если ни текущий, ни
+                    # ближайшие 3 месяца не показывают восстановления спроса
+                    # — то есть сезон не просто низкий сейчас, а не
+                    # собирается расти в горизонте лид-тайма+буфера закупа.
+                    outlook = idx
+                    for i in range(1, 4):
+                        m = ((cur_month - 1 + i) % 12) + 1
+                        v = cat_season.get(m)
+                        if v is not None:
+                            outlook = max(outlook, v)
+                    if outlook < 0.4:
+                        season_suppressed = True
+
+        if season_suppressed:
+            tier = "T2S_SEASON_OFF"
+
+        target_units = (TARGET_COVER_DAYS / 30.0) * mvel_retail
+        need = target_units - kaspi_stock - near_pipeline - far_pipeline
+        suggest_qty = max(0, math.ceil(need)) if tier in ("T1_CRITICAL", "T2_PIPELINE") else 0
 
         wholesale_orders = sorted(d["wholesale_orders"], key=lambda o: o["date"])[-5:]
         wholesale_total = sum(o["qty"] for o in d["wholesale_orders"])
@@ -2198,7 +2229,8 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             for it in group:
                 it["made_to_order_group"] = True
 
-    TIER_ORDER = {"T1_CRITICAL": 0, "T2_PIPELINE": 1, "T3A_LISTING": 2, "T3B_LOWPRI": 3, "T4_OK": 4}
+    TIER_ORDER = {"T1_CRITICAL": 0, "T2_PIPELINE": 1, "T2S_SEASON_OFF": 2,
+                  "T3A_LISTING": 3, "T3B_LOWPRI": 4, "T4_OK": 5}
     # Сортировка внутри тира — по ₸-потенциалу (цена × Купить), не по штукам:
     # это и есть ответ на вопрос "что реально двигает сумму продаж" внутри
     # одного уровня срочности. Штуки (-suggest_qty) и скорость (-mvel_retail)
@@ -2226,6 +2258,11 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             "(kod, напр. 119264283) и SKU CRM (напр. 9304067) — разные пространства "
             "идентификаторов без моста в текущих данных; включать только после "
             "реального сопоставления SKU↔kod",
+            "Тир T2S (сезон закончился) подавляет T1/T2, если ни текущий, ни ближайшие "
+            "3 месяца индекса сезонности не показывают восстановления спроса (порог 0.4, "
+            "не откалиброван статистически — эмпирический, проверен на фризерах для "
+            "мороженого); категориям с историей <6 разных календарных месяцев индекс не "
+            "считается вовсе, и подавление не сработает — тир останется как есть",
         ],
     }
 
