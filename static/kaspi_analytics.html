@@ -3452,19 +3452,27 @@ function renderZkTable(){
     const sc=ZK_SCOPE[it.scope]||{label:it.scope,color:'var(--muted)'};
     const badge=`<span style="background:${tc.color}22;color:${tc.color};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap">${tc.label}</span>`;
     const scopeBadge=`<span style="color:${sc.color};font-size:10.5px;font-weight:600">${sc.label}</span>`;
+    // Директорский аудит 06.08: 12 T1 + 27 в других тирах — название в CRM
+    // буквально "Не указано" (проверено в обоих источниках — и в остатках,
+    // и в продажах по каналам, не баг парсера). Это реальные продающиеся
+    // товары (статус "Продается", есть цена), но без имени купить по
+    // рекомендации нельзя — нужно сначала найти SKU в CRM руками. Раньше
+    // это тонуло в общей таблице неотличимо от обычных строк.
+    const noName = !it.name || !it.name.trim() || it.name.trim().toLowerCase()==='не указано';
     let flags='';
+    if(noName) flags+=`<i class="ti ti-help-octagon" title="В CRM нет названия для этого SKU (ни в остатках, ни в продажах) — прежде чем закупать, найди товар в CRM по артикулу и уточни, что это." style="color:var(--red);font-size:12px;margin-left:5px"></i>`;
     if(it.season_conflict) flags+=`<i class="ti ti-sun-off" title="Сезонный индекс месяца ×${it.season_note?.month_index} — похоже на сезонный спад, не дефицит. Проверить перед закупом." style="color:var(--yellow);font-size:12px;margin-left:5px"></i>`;
     if(it.made_to_order_group) flags+=`<i class="ti ti-package" title="Категория похожа на «под заказ» — см. предупреждение выше" style="color:var(--purple);font-size:12px;margin-left:5px"></i>`;
     if(it.kaspi_divergence) flags+=`<i class="ti ti-alert-triangle" title="Kaspi-канал в файле продаж (${it.kaspi_divergence.file_kaspi_units} шт) расходится с загрузкой сайта (${it.kaspi_divergence.site_kaspi_units} шт) на ${it.kaspi_divergence.diff_pct}%" style="color:var(--red);font-size:12px;margin-left:5px"></i>`;
     const pipeTitle=`Близко (≤15д, отправлено с завода): ${fmtN(it.near_pipeline)} · Далеко (заказано, до ${TARGET_COVER_DAYS_LABEL}): ${fmtN(it.far_pipeline)}`;
     const wp=it.wholesale_pattern;
     const wpTitle = wp ? `Опт/дилеры за 13 мес: ${fmtN(wp.total_13mo)} шт (не входит в буфер — см. документ)` : '';
-    return `<tr>
+    return `<tr${noName?' style="background:rgba(248,81,73,.06)"':''}>
       <td>${badge}</td>
       <td style="font-family:monospace;font-size:12px;color:var(--muted)">${it.sku||'—'}</td>
       <td style="max-width:240px" title="${escHtml(it.name||'')}">
         <div style="display:flex;align-items:center;max-width:240px">
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto">${it.name||'—'}</span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto${noName?';color:var(--red);font-style:italic':''}">${it.name||'—'}</span>
           ${flags}
         </div>
       </td>
