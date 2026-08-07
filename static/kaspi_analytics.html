@@ -1083,6 +1083,22 @@ textarea.inp::placeholder{color:var(--muted)}
             </table>
           </div>
         </div>
+        <div class="sec" id="zk-city-wrap" style="margin-bottom:16px">
+          <div class="sh"><span class="st"><i class="ti ti-map-pin" style="color:var(--yellow)"></i> По городам — Алматы / Астана / Шымкент</span></div>
+          <p style="font-size:11px;color:var(--muted);padding:12px 20px 0;margin:0">Факт продаж по городу-складу (все каналы, 3 трейлинг-месяца). Плана продаж по городам пока нет в системе — появится сравнение план/факт, когда цифры будут переданы.</p>
+          <div id="zk-city-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 20px"></div>
+          <div id="zk-city-transfer-empty" style="display:none;font-size:12px;color:var(--muted);padding:0 20px 14px">Явных возможностей перемещения между городами сейчас нет.</div>
+          <div id="zk-city-transfer-wrap" style="overflow-x:auto">
+            <table class="tbl" id="zk-transfer-t">
+              <thead><tr>
+                <th>Тир</th><th>Артикул</th><th>Название</th><th>Из города</th><th>В город</th>
+                <th style="text-align:right">Кол-во</th>
+              </tr></thead>
+              <tbody id="zk-transfer-body"></tbody>
+            </table>
+          </div>
+          <p style="font-size:11px;color:var(--muted);padding:0 20px 14px;margin:0"><i class="ti ti-alert-triangle" style="color:var(--yellow);font-size:12px"></i> Срок перемещения Первомай↔города считается почти мгновенным (T+0/1) — гипотеза, точных данных по внутренней логистике нет.</p>
+        </div>
         <div id="zk-gaps" style="font-size:11.5px;color:var(--muted);background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 14px;line-height:1.6"></div>
       </div>
     </div>
@@ -3480,6 +3496,48 @@ async function renderZakup(){
       } else {
         nsWrap.style.display='none';
       }
+    }
+
+    // 08.08 — по городам (Дамир: "разделение суммы продаж и плана закупа по
+    // городам"). city_sales_totals — факт (все каналы, 3 трейлинг-мес.),
+    // city_transfers — рекомендации переместить остаток между городами
+    // вместо нового заказа у поставщика (T+0/1 допущение, см. сноску ниже
+    // таблицы). Оба поля считаются по ВСЕМУ каталогу CRM — не зависят от
+    // переключателя охвата/отдела выше, как и весь остальной Закуп.
+    const cityTotals=proc.city_sales_totals||{};
+    const CITY_COLOR={'Алматы':'var(--ice)','Астана':'var(--blue)','Шымкент':'var(--green)','Не определено':'var(--muted)'};
+    const cityCardOrder=['Алматы','Астана','Шымкент'];
+    if(cityTotals['Не определено']&&(cityTotals['Не определено'].revenue||cityTotals['Не определено'].qty)) cityCardOrder.push('Не определено');
+    g('zk-city-summary').innerHTML=cityCardOrder.map(c=>{
+      const v=cityTotals[c]||{revenue:0,qty:0};
+      const color=CITY_COLOR[c]||'var(--muted)';
+      return `<div style="background:var(--s1);border:1px solid ${color}44;border-top:3px solid ${color};border-radius:10px;padding:14px 16px">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px"><i class="ti ti-map-pin" style="font-size:11px"></i> ${c}</div>
+        <div style="font-size:20px;font-weight:800;color:${color}">${fmtR(v.revenue)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${fmtN(v.qty)} шт.</div>
+      </div>`;
+    }).join('');
+
+    const cityTransfers=proc.city_transfers||[];
+    const ctEmpty=g('zk-city-transfer-empty'), ctWrap=g('zk-city-transfer-wrap');
+    if(cityTransfers.length){
+      if(ctEmpty) ctEmpty.style.display='none';
+      if(ctWrap) ctWrap.style.display='';
+      g('zk-transfer-body').innerHTML=cityTransfers.slice(0,100).map(tr=>{
+        const tc=ZK_TIER[tr.tier]||{label:tr.tier,color:'var(--muted)'};
+        const badge=`<span style="background:${tc.color}22;color:${tc.color};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap">${tc.label}</span>`;
+        return `<tr>
+          <td>${badge}</td>
+          <td style="font-family:monospace;font-size:12px;color:var(--muted)">${tr.sku||'—'}</td>
+          <td>${tr.name||'—'}</td>
+          <td style="color:var(--muted)">${tr.from_city}</td>
+          <td style="font-weight:600">${tr.to_city}</td>
+          <td style="text-align:right;font-weight:700">${fmtN(tr.qty)}</td>
+        </tr>`;
+      }).join('');
+    } else {
+      if(ctEmpty) ctEmpty.style.display='';
+      if(ctWrap) ctWrap.style.display='none';
     }
 
     const gaps=proc.known_gaps||[];
