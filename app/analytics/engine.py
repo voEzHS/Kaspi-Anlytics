@@ -2063,6 +2063,27 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
     months_used = all_dates[-_TRAILING_MONTHS:]
     n_months = len(months_used) or 1
 
+    # 08.08 — Дамир: "твоя цель сейчас разделение суммы продаж и плана
+    # закупа по городам и всю логику в целом" (цифры плана продаж по
+    # городам придут позже отдельно — эта функция готовит факт-разбивку,
+    # план встанет поверх неё, когда появятся цифры). Разбивка ПО ВСЕМ
+    # каналам (не только retail-бакету, который используется для скорости
+    # продаж/тира ниже) — это топлайн "сколько продаём в каждом городе",
+    # не сигнал спроса для закупа.
+    CITIES = ("Алматы", "Астана", "Шымкент")
+    city_sales_totals = {c: {"revenue": 0.0, "qty": 0.0} for c in CITIES}
+    city_sales_totals["Не определено"] = {"revenue": 0.0, "qty": 0.0}
+    for r in channel_rows:
+        d = r.get("sale_date")
+        if not d or (d.year, d.month) not in months_used:
+            continue
+        c = r.get("city") if r.get("city") in CITIES else "Не определено"
+        city_sales_totals[c]["revenue"] += r.get("revenue") or 0
+        city_sales_totals[c]["qty"] += r.get("qty") or 0
+    for c in city_sales_totals:
+        city_sales_totals[c]["revenue"] = round(city_sales_totals[c]["revenue"], 0)
+        city_sales_totals[c]["qty"] = round(city_sales_totals[c]["qty"], 1)
+
     seasonality = calc_category_seasonality(channel_rows)
 
     per_sku: dict[str, dict] = {}
@@ -2310,6 +2331,59 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         }
         items.append(item)
 
+    # 08.08 — «Перемещение»: план закупа/остатков по городам. Дамир 08.08:
+    # срок внутреннего плеча Первомай→Астана/Шымкент считать T+0/1 (почти
+    # мгновенным) — это ГИПОТЕЗА (в CRM и в двух документах логистики точных
+    # цифр нет, "используется допущение «быстро» без цифры"), уточнить
+    # позже реальным числом. При T+0/1 логика простая: если в одном городе
+    # дефицит (сток < целевого покрытия по ЕГО собственному спросу), а в
+    # другом — избыток, выгоднее СНАЧАЛА переместить внутри страны (дни),
+    # чем заказывать у поставщика (~45 дней). suggest_qty/tier выше НЕ
+    # трогаем (они остаются честным сигналом "есть риск дефицита в целом по
+    # компании") — это отдельный, дополнительный слой поверх него.
+    city_transfers = []
+    for it in items:
+        by_city = it["by_city_stock"]
+        demand = it["mvel_retail_by_city"]
+        target_days_frac = TARGET_COVER_DAYS / 30.0
+        gaps = {}
+        for c in CITIES:
+            city_target = target_days_frac * (demand.get(c) or 0)
+            city_stock = by_city.get(c) or 0
+            gaps[c] = round(city_target - city_stock, 2)  # >0 дефицит, <0 избыток
+
+        shortages = sorted([c for c in CITIES if gaps[c] > 0.5], key=lambda c: -gaps[c])
+        surpluses = sorted([c for c in CITIES if gaps[c] < -0.5], key=lambda c: gaps[c])
+        remaining_surplus = {c: -gaps[c] for c in surpluses}
+        sku_transfers = []
+        for to_city in shortages:
+            need = gaps[to_city]
+            for from_city in surpluses:
+                if need <= 0.5:
+                    break
+                avail = remaining_surplus.get(from_city, 0)
+                if avail <= 0.5:
+                    continue
+                qty = math.floor(min(need, avail))
+                if qty <= 0:
+                    continue
+                sku_transfers.append({
+                    "sku": it["sku"], "name": it["name"], "category": it["category"],
+                    "from_city": from_city, "to_city": to_city, "qty": qty,
+                    "tier": it["tier"],
+                })
+                need -= qty
+                remaining_surplus[from_city] -= qty
+        if sku_transfers:
+            city_transfers.extend(sku_transfers)
+        it["city_plan"] = {
+            c: {"target_units": round(target_days_frac * (demand.get(c) or 0), 1),
+                "stock": by_city.get(c) or 0, "gap": gaps[c]}
+            for c in CITIES
+        }
+
+    city_transfers.sort(key=lambda x: -x["qty"])
+
     # 08.08 — обнаружение возможных задвоенных карточек: одинаковое
     # название+цена+категория под разными SKU в T1/T2. Не можем отличить
     # "это правда разные варианты (цвет/комплектация не в названии)" от
@@ -2355,6 +2429,8 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         "made_to_order_groups": made_to_order_groups,
         "possible_duplicates": sorted(possible_duplicates, key=lambda x: -x["total_revenue_potential"]),
         "no_stock_data": sorted(no_stock_data, key=lambda x: -x["mvel_retail"])[:50],
+        "city_sales_totals": city_sales_totals,
+        "city_transfers": city_transfers,
         "months_used": sorted(months_used_labels, key=_month_sort_key),
         "counts": {t: sum(1 for it in items if it["tier"] == t) for t in TIER_ORDER},
         "target_cover_days": TARGET_COVER_DAYS,
@@ -2364,7 +2440,13 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             "MOQ (минимальная партия) по SKU/поставщику неизвестен — рекомендованное количество может быть меньше MOQ",
             "Себестоимость/маржа по SKU недоступна — приоритизация по выручке, не по прибыли",
             "Дата размещения заказа (2_ordered) неизвестна — 45 дней это верхняя граница, не точный расчёт",
-            "Плечо Первомай → Астана/Шымкент/Туздыбастау не оценено, буфер его не учитывает",
+            "city_transfers считает плечо Первомай→Астана/Шымкент почти мгновенным (T+0/1) "
+            "по прямому указанию Дамира 08.08 — точных цифр в CRM и документах логистики нет "
+            "(\"используется допущение «быстро» без цифры\"), это рабочая гипотеза, не измеренный факт; "
+            "уточнить реальным сроком, когда появится",
+            "city_sales_totals/city_plan — факт-разбивка по городам готова; цифры ПЛАНА продаж "
+            "по городам ещё не переданы Дамиром (обещал скинуть позже) — сравнения план vs факт "
+            "пока нет, есть только факт",
             "Статус канала «Айдын Опт» (независимый дилер или связанная структура) не подтверждён",
             "Сверка Kaspi-канала файла с загрузкой сайта отключена: код Kaspi-листинга "
             "(kod, напр. 119264283) и SKU CRM (напр. 9304067) — разные пространства "

@@ -483,7 +483,7 @@ async def get_procurement_v2(db: AsyncSession = Depends(get_db)):
     channel_rows = [
         {"sku": r.sku, "name": r.name, "qty": r.qty, "revenue": r.revenue,
          "sale_date": r.sale_date, "channel": r.channel,
-         "category": r.category, "subgroup": r.subgroup}
+         "category": r.category, "subgroup": r.subgroup, "city": r.city}
         for r in channel_result.scalars().all()
     ]
     stock_result = await db.execute(select(StockRow))
