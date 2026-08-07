@@ -2077,6 +2077,7 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         entry = per_sku.setdefault(sku, {
             "name": r.get("name"), "category": cat, "subgroup": r.get("subgroup"),
             "retail_by_month": defaultdict(float), "wholesale_orders": [],
+            "retail_by_city": defaultdict(float),
             "_last_rev": -1,
         })
         if (r.get("revenue") or 0) >= entry["_last_rev"]:
@@ -2087,6 +2088,17 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         if bucket == "retail":
             if ym in months_used:
                 entry["retail_by_month"][ym] += r.get("qty") or 0
+                # 08.08 — город СКЛАДА, обслужившего продажу (см. докстринг
+                # router/channel_sales.py), не город доставки клиенту. Нужен
+                # для будущей разбивки закупа/перемещения по городам
+                # (Дамир 08.08: "план продаж на 3 города — Алматы/Астана/
+                # Шымкент"). Пока чисто информационный срез в item — тир и
+                # suggest_qty ниже по-прежнему считаются по ОБЩЕЙ скорости
+                # продаж, город НЕ влияет на решение (это отдельная, ещё не
+                # спроектированная логика "Перемещение").
+                city = r.get("city")
+                if city:
+                    entry["retail_by_city"][city] += r.get("qty") or 0
         elif bucket == "wholesale":
             entry["wholesale_orders"].append(
                 {"date": d.date().isoformat(), "qty": r.get("qty") or 0, "channel": r.get("channel")})
@@ -2265,10 +2277,26 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         revenue_potential = round(price * suggest_qty, 0) if suggest_qty > 0 else 0
 
         resolved_name = MANUAL_NAME_OVERRIDES.get(sku) or d["name"]
+        # 08.08 — по городам, чисто информационно (см. комментарий выше в
+        # цикле накопления retail_by_city). mvel_retail_by_city — скорость
+        # продаж отдельно по городу-складу; by_city_stock — реальный сток
+        # именно этого склада (уже был в st, просто не разложен по item).
+        # Не участвует в tier/suggest_qty — только для будущей вкладки
+        # "Перемещение" (задача #141/#142).
+        mvel_retail_by_city = {
+            city: round(qty / n_months, 2) for city, qty in d["retail_by_city"].items()
+        }
+        by_city_stock = {
+            "Алматы": st.get("wh_pervomay") or 0,
+            "Астана": st.get("wh_astana") or 0,
+            "Шымкент": st.get("wh_shymkent") or 0,
+        }
         item = {
             "sku": sku, "name": resolved_name, "category": d["category"], "subgroup": d["subgroup"],
             "status": st.get("status"),
             "mvel_retail": round(mvel_retail, 2),
+            "mvel_retail_by_city": mvel_retail_by_city,
+            "by_city_stock": by_city_stock,
             "kaspi_stock": kaspi_stock,
             "near_pipeline": near_pipeline, "far_pipeline": far_pipeline,
             "cover_months": cover_months, "cover_months_full": cover_months_full,

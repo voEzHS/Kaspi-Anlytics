@@ -10,6 +10,16 @@ calc_procurement_v2 (см. app/analytics/engine.py и Zakup_V2_Design_2026-08-05
 Город канала продаж, Город накладной, Подгруппа товара, Категория товара.
 Клиентские ПДн (имя, телефон) сознательно НЕ читаются и не сохраняются —
 для процурмента не нужны.
+
+08.08 — «Город канала продаж» теперь читается (поле city). Проверено на
+реальном файле: ровно 3 значения без пропусков — Алматы/Астана/Шымкент,
+100% совпадает со складами StockRow (wh_pervomay/wh_astana/wh_shymkent) —
+это город склада, который обслужил продажу, а не город доставки клиенту.
+Именно поэтому он пригоден для разбивки закупа/перемещения по городам.
+«Город накладной» (город доставки клиента, 285 разных значений вплоть до
+посёлков) — сознательно НЕ читаем: это другое измерение (география спроса
+конечного клиента по всему Казахстану), не совпадает со складами и не
+нужен для решений по закупу/перемещению между 3 складами.
 """
 import os
 from datetime import datetime, timezone
@@ -34,6 +44,12 @@ _COL_DATE = "дата отпуска"
 _COL_CHANNEL = "канал продаж"
 _COL_CATEGORY = "категория товара"
 _COL_SUBGROUP = "подгруппа товара"
+_COL_CITY = "город канала продаж"
+
+# Нормализация написания города к 3 каноничным значениям, совпадающим с
+# StockRow.wh_pervomay/wh_astana/wh_shymkent. В файле встречается ровно эти
+# 3 варианта без пропусков, но нормализуем на всякий случай (регистр/пробелы).
+_CITY_CANON = {"алматы": "Алматы", "астана": "Астана", "шымкент": "Шымкент"}
 
 
 def _norm(s) -> str:
@@ -100,6 +116,8 @@ def parse_channel_sales_excel(filepath: str) -> list[dict]:
             col["category"] = idx
         elif n == _COL_SUBGROUP:
             col["subgroup"] = idx
+        elif n == _COL_CITY:
+            col["city"] = idx
 
     if "sku" not in col:
         raise ValueError("Колонка SKU не найдена в файле")
@@ -118,6 +136,7 @@ def parse_channel_sales_excel(filepath: str) -> list[dict]:
         sku = str(sku_raw).strip().upper()
 
         dt = _parse_dt(get(row, "date"))
+        city_raw = _norm(get(row, "city"))
         result.append({
             "sku": sku,
             "name": str(get(row, "name") or "").strip(),
@@ -127,6 +146,7 @@ def parse_channel_sales_excel(filepath: str) -> list[dict]:
             "channel": str(get(row, "channel") or "").strip(),
             "category": str(get(row, "category") or "").strip(),
             "subgroup": str(get(row, "subgroup") or "").strip(),
+            "city": _CITY_CANON.get(city_raw),  # None если незнакомое написание — не угадываем
         })
     return result
 

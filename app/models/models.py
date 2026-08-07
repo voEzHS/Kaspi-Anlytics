@@ -168,12 +168,20 @@ class ChannelSalesRow(Base):
     channel = Column(String(150), nullable=True)          # «Канал продаж» (сырое значение)
     category = Column(String(200), nullable=True, index=True)   # «Категория товара» (81 категория CRM)
     subgroup = Column(String(200), nullable=True)          # «Подгруппа товара» (9 крупных групп)
+    # «Город канала продаж» — 08.08. Город СКЛАДА, обслужившего продажу
+    # (Алматы/Астана/Шымкент, 100% заполнено на реальном файле) — НЕ город
+    # доставки клиенту (это отдельная колонка «Город накладной», сознательно
+    # не читаем, см. докстринг router/channel_sales.py). Совпадает 1:1 со
+    # складами StockRow (wh_pervomay/wh_astana/wh_shymkent) — join-ключ для
+    # разбивки закупа/перемещения по городам.
+    city = Column(String(50), nullable=True, index=True)
 
     upload = relationship("ChannelSalesUpload", back_populates="rows")
 
     __table_args__ = (
         Index("ix_channel_sales_sku", "sku"),
         Index("ix_channel_sales_category", "category"),
+        Index("ix_channel_sales_city", "city"),
     )
 
 

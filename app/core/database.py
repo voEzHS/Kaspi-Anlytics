@@ -31,6 +31,29 @@ async def init_db():
         await conn.run_sync(ModelBase.metadata.create_all)
 
     await _migrate_dept_enum()
+    await _migrate_channel_sales_city()
+
+
+async def _migrate_channel_sales_city():
+    """
+    Idempotent migration: add ChannelSalesRow.city to an already-existing
+    channel_sales_rows table. create_all() never ALTERs an existing table,
+    so a new Column() on the model is invisible to Postgres until this runs.
+    Same idiom as _migrate_dept_enum() below. 08.08 — added to support
+    per-city (Алматы/Астана/Шымкент) procurement/transfer split.
+    """
+    from sqlalchemy import text
+
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text(
+                "ALTER TABLE channel_sales_rows ADD COLUMN IF NOT EXISTS city VARCHAR(50)"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_channel_sales_city ON channel_sales_rows (city)"
+            ))
+    except Exception as e:
+        print(f"[init_db] channel_sales.city migration skipped: {e}")
 
 
 async def _migrate_dept_enum():
