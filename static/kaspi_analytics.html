@@ -1092,12 +1092,12 @@ textarea.inp::placeholder{color:var(--muted)}
             <table class="tbl" id="zk-transfer-t">
               <thead><tr>
                 <th>Тир</th><th>Артикул</th><th>Название</th><th>Из города</th><th>В город</th>
-                <th style="text-align:right">Кол-во</th>
+                <th style="text-align:right">Кол-во</th><th style="text-align:right">₸ ценность</th><th>Доля Kaspi</th>
               </tr></thead>
               <tbody id="zk-transfer-body"></tbody>
             </table>
           </div>
-          <p style="font-size:11px;color:var(--muted);padding:0 20px 14px;margin:0"><i class="ti ti-alert-triangle" style="color:var(--yellow);font-size:12px"></i> Срок перемещения Первомай↔города считается почти мгновенным (T+0/1) — гипотеза, точных данных по внутренней логистике нет.</p>
+          <p style="font-size:11px;color:var(--muted);padding:0 20px 14px;margin:0"><i class="ti ti-alert-triangle" style="color:var(--yellow);font-size:12px"></i> Срок перемещения Первомай↔города считается почти мгновенным (T+0/1) — гипотеза, точных данных по внутренней логистике нет. «Доля Kaspi» — чем выше, тем ниже уверенность, что «Город» = реальный склад отгрузки (подтверждено только для розницы/Instagram/TikTok/Магазин, не для Kaspi — см. известные ограничения ниже).</p>
         </div>
         <div id="zk-gaps" style="font-size:11.5px;color:var(--muted);background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 14px;line-height:1.6"></div>
       </div>
@@ -3526,6 +3526,9 @@ async function renderZakup(){
       g('zk-transfer-body').innerHTML=cityTransfers.slice(0,100).map(tr=>{
         const tc=ZK_TIER[tr.tier]||{label:tr.tier,color:'var(--muted)'};
         const badge=`<span style="background:${tc.color}22;color:${tc.color};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap">${tc.label}</span>`;
+        const ksp=tr.kaspi_share_pct;
+        const kspColor=ksp==null?'var(--muted)':ksp>=70?'var(--red)':ksp>=30?'var(--yellow)':'var(--green)';
+        const kspLabel=ksp==null?'—':`${fmtN(ksp)}%`;
         return `<tr>
           <td>${badge}</td>
           <td style="font-family:monospace;font-size:12px;color:var(--muted)">${tr.sku||'—'}</td>
@@ -3533,6 +3536,8 @@ async function renderZakup(){
           <td style="color:var(--muted)">${tr.from_city}</td>
           <td style="font-weight:600">${tr.to_city}</td>
           <td style="text-align:right;font-weight:700">${fmtN(tr.qty)}</td>
+          <td style="text-align:right">${fmtR(tr.value)}</td>
+          <td style="color:${kspColor};font-weight:600">${kspLabel}</td>
         </tr>`;
       }).join('');
     } else {
