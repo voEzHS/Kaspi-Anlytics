@@ -1097,7 +1097,7 @@ textarea.inp::placeholder{color:var(--muted)}
               <tbody id="zk-transfer-body"></tbody>
             </table>
           </div>
-          <p style="font-size:11px;color:var(--muted);padding:0 20px 14px;margin:0"><i class="ti ti-alert-triangle" style="color:var(--yellow);font-size:12px"></i> Срок перемещения Первомай↔города считается почти мгновенным (T+0/1) — гипотеза, точных данных по внутренней логистике нет. «Доля Kaspi» — чем выше, тем ниже уверенность, что «Город» = реальный склад отгрузки (подтверждено только для розницы/Instagram/TikTok/Магазин, не для Kaspi — см. известные ограничения ниже).</p>
+          <p style="font-size:11px;color:var(--muted);padding:0 20px 14px;margin:0"><i class="ti ti-alert-triangle" style="color:var(--red);font-size:12px"></i> Срок перемещения Первомай↔города считается почти мгновенным (T+0/1) — гипотеза. Для розницы/Instagram/TikTok/Магазин город достоверен. <b style="color:var(--text)">Для Kaspi «Город» ОПРОВЕРГНУТ живой проверкой в CRM 08.08</b> (Точка отгрузки=Астана дала 1 позицию из 75, помеченных Городом=Астана) — рекомендации с высокой «Долей Kaspi» не исполнять, пока не появится экспорт с реальной Точкой отгрузки.</p>
         </div>
         <div id="zk-gaps" style="font-size:11.5px;color:var(--muted);background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 14px;line-height:1.6"></div>
       </div>
@@ -3527,7 +3527,9 @@ async function renderZakup(){
         const tc=ZK_TIER[tr.tier]||{label:tr.tier,color:'var(--muted)'};
         const badge=`<span style="background:${tc.color}22;color:${tc.color};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap">${tc.label}</span>`;
         const ksp=tr.kaspi_share_pct;
-        const kspColor=ksp==null?'var(--muted)':ksp>=70?'var(--red)':ksp>=30?'var(--yellow)':'var(--green)';
+        // 08.08 — порог ужесточён после живой проверки: любая заметная доля
+        // Kaspi уже ненадёжна (см. сноску ниже таблицы), не только высокая.
+        const kspColor=ksp==null?'var(--muted)':ksp>=20?'var(--red)':ksp>=5?'var(--yellow)':'var(--green)';
         const kspLabel=ksp==null?'—':`${fmtN(ksp)}%`;
         return `<tr>
           <td>${badge}</td>
