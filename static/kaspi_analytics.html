@@ -1050,6 +1050,10 @@ textarea.inp::placeholder{color:var(--muted)}
       <div id="zk-ld" class="ld"><div class="spin"></div>Считаю план закупа...</div>
       <div id="zk-em" class="empty" style="display:none"><i class="ti ti-truck-delivery"></i><h3>Нет данных</h3><p>Загрузи оба файла выше, чтобы увидеть план закупа</p></div>
       <div id="zk-ct" style="display:none">
+        <div id="zk-dq-banner" style="display:none;margin-bottom:14px;padding:12px 16px;border-radius:10px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35)">
+          <div style="font-size:12px;font-weight:700;color:#ef4444;display:flex;align-items:center;gap:6px;margin-bottom:6px"><i class="ti ti-alert-triangle"></i> Загруженный файл продаж слишком узкий — цифрам ниже нельзя доверять</div>
+          <ul id="zk-dq-list" style="font-size:11.5px;color:var(--text);margin:0;padding-left:18px;line-height:1.5"></ul>
+        </div>
         <div id="zk-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px"></div>
         <div id="zk-mto"></div>
         <div id="zk-dups"></div>
@@ -3426,6 +3430,22 @@ async function renderZakup(){
     }
     ss('zk','ct');
     window._zkProc=proc;
+
+    // 08.08 — data_quality: делает видимым узкий/неполный файл продаж
+    // прямо на экране (раньше расчёт молча давал другой результат — так и
+    // родилась история "фризер всё равно предлагают, хотя логику уже 10
+    // раз переделали": на проде оказался загружен тестовый файл на 1
+    // город/3 месяца вместо полного, из-за чего сезонность не считалась
+    // ни для одной категории).
+    const dq=proc.data_quality;
+    const dqBanner=g('zk-dq-banner'), dqList=g('zk-dq-list');
+    if(dq && dq.warnings && dq.warnings.length){
+      dqBanner.style.display='';
+      dqList.innerHTML=dq.warnings.map(w=>`<li>${w}</li>`).join('')+
+        `<li>Решение: загрузить в «Продажи по всем каналам» ПОЛНЫЙ экспорт (все 3 города, ≥6 месяцев) — не узкий тестовый файл.</li>`;
+    } else if(dqBanner){
+      dqBanner.style.display='none';
+    }
 
     const counts=proc.counts||{};
     const t1t2=proc.items.filter(it=>it.tier==='T1_CRITICAL'||it.tier==='T2_PIPELINE');

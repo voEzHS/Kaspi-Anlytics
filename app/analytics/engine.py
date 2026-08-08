@@ -2086,6 +2086,56 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
 
     seasonality = calc_category_seasonality(channel_rows)
 
+    # 08.08 — root-cause guard (Дамир: "мы уже 10 раз переделывали логику и
+    # он всё ещё предлагает фризер" — расследование живых данных проды
+    # показало, что сама логика верна и подтверждена тестом на полном файле
+    # (42к строк, 3 города): фризер корректно уходит в T2S_SEASON_OFF,
+    # suggest_qty=0. Причина расхождения prod vs тест — на проде оказался
+    # загружен УЗКИЙ тестовый файл (1988 строк, только Алматы, короткий
+    # период вместо полного «Продажи всех каналов»), из-за чего
+    # calc_category_seasonality() выше молча пропускает почти все категории
+    # (< 6 месяцев истории на категорию) и city_sales_totals/
+    # city_purchase_split вырождаются в один город. Раньше это было
+    # НЕВИДИМО — расчёт просто тихо давал другой, менее строгий результат
+    # без единого сигнала о том, что входные данные недостаточны. Этот блок
+    # делает такую ситуацию видимой прямо в ответе API (data_quality), а не
+    # только при ручном сравнении с локальным тестом — чтобы ошибка
+    # «загрузили не тот/слишком узкий файл» не повторялась в 11-й раз.
+    retail_rows_dq = [r for r in channel_rows if _channel_bucket(r.get("channel")) == "retail"]
+    dq_cities_seen = {r.get("city") for r in retail_rows_dq if r.get("city")}
+    dq_categories_seen = {r.get("category") or "" for r in retail_rows_dq if r.get("sale_date")}
+    dq_categories_seen.discard("")
+    dq_months_total = len(all_dates)
+    dq_seasonality_coverage = (round(len(seasonality) / len(dq_categories_seen), 2)
+                                if dq_categories_seen else None)
+
+    dq_warnings = []
+    if len(dq_cities_seen) < 3:
+        dq_warnings.append(
+            f"Загруженный файл содержит данные только по {len(dq_cities_seen)} город(ам) из 3"
+            f"{(' (' + ', '.join(sorted(dq_cities_seen)) + ')') if dq_cities_seen else ''} — "
+            "«По городам» и разбивка закупа по городам будут неполными или неверными."
+        )
+    if dq_months_total < 6:
+        dq_warnings.append(
+            f"Загруженный файл покрывает только {dq_months_total} календарных месяцев — "
+            "сезонное подавление (тир T2S_SEASON_OFF) требует минимум 6 и НЕ сработает ни для "
+            "одной категории. Все рекомендации «Купить» в этом снимке — БЕЗ поправки на сезон."
+        )
+    elif dq_seasonality_coverage is not None and dq_seasonality_coverage < 0.5:
+        dq_warnings.append(
+            f"Сезонность посчиталась только для {len(seasonality)} из {len(dq_categories_seen)} "
+            f"категорий ({int(dq_seasonality_coverage * 100)}%) — остальным не хватает 6 месяцев "
+            "истории в загруженном файле, для них сезонное подавление не сработает."
+        )
+    data_quality = {
+        "cities_seen": sorted(dq_cities_seen),
+        "months_total": dq_months_total,
+        "categories_total": len(dq_categories_seen),
+        "categories_with_seasonality": len(seasonality),
+        "warnings": dq_warnings,
+    }
+
     per_sku: dict[str, dict] = {}
     for r in channel_rows:
         sku = r["sku"]
@@ -2509,6 +2559,7 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         "city_sales_totals": city_sales_totals,
         "city_transfers": city_transfers,
         "purchase_split_totals": purchase_split_totals,
+        "data_quality": data_quality,
         "months_used": sorted(months_used_labels, key=_month_sort_key),
         "counts": {t: sum(1 for it in items if it["tier"] == t) for t in TIER_ORDER},
         "target_cover_days": TARGET_COVER_DAYS,
