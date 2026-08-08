@@ -2355,6 +2355,7 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         shortages = sorted([c for c in CITIES if gaps[c] > 0.5], key=lambda c: -gaps[c])
         surpluses = sorted([c for c in CITIES if gaps[c] < -0.5], key=lambda c: gaps[c])
         remaining_surplus = {c: -gaps[c] for c in surpluses}
+        unresolved_gap = {c: (gaps[c] if gaps[c] > 0.5 else 0.0) for c in CITIES}
         # 08.08 — директорский аудит: доля Kaspi в спросе SKU, честности ради.
         # Живая проверка в CRM ("Склад → Бронь товаров") показала, что ВСЕ
         # исторические Kaspi-резервы (72 акта, все до дек. 2024, похоже на
@@ -2393,6 +2394,7 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
                 })
                 need -= qty
                 remaining_surplus[from_city] -= qty
+            unresolved_gap[to_city] = round(max(0.0, need), 2)
         if sku_transfers:
             city_transfers.extend(sku_transfers)
         it["city_plan"] = {
@@ -2400,6 +2402,56 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
                 "stock": by_city.get(c) or 0, "gap": gaps[c]}
             for c in CITIES
         }
+
+        # 08.08 — «Закуп по городам»: Дамир прямо указал, что вся логика закупа
+        # должна учитывать фактический маршрут — из Китая товар всегда сначала
+        # приезжает на Хаб Первомай (Алматы), и уже ОТТУДА распределяется в
+        # Астану/Шымкент. Поэтому "Купить" (suggest_qty) — это не финальная
+        # рекомендация, а только ОБЪЁМ заказа у поставщика; city_transfers выше
+        # решает только то, что можно закрыть перемещением УЖЕ существующего
+        # стока между городами. Если после этого остаётся нерешённый дефицит
+        # (unresolved_gap > 0) в конкретном городе — именно под него нужно
+        # закладывать долю НОВОЙ закупки, чтобы после приезда в Алматы часть
+        # партии сразу переслать дальше, а не ждать, пока Алматы "наестся" и
+        # излишек когда-нибудь переместят. Делим suggest_qty пропорционально
+        # нерешённым дефицитам; если по формуле дефицита нет ни в одном городе
+        # (buy пришёл из другой логики — буфер/пайплайн, не сырая городская
+        # скорость продаж) — вся партия по умолчанию идёт в Алматы (это и
+        # физически верно: приедет туда в любом случае, а куда двигать дальше
+        # без выраженного городского дефицита — решение вручную, не автоматика).
+        buy_qty = it.get("suggest_qty") or 0
+        city_purchase_split = {c: 0 for c in CITIES}
+        if buy_qty > 0:
+            total_unresolved = sum(v for v in unresolved_gap.values() if v > 0)
+            if total_unresolved > 0.5:
+                shares = {c: unresolved_gap[c] for c in CITIES if unresolved_gap[c] > 0}
+                allocated = 0
+                for c, g in shares.items():
+                    q = math.floor(buy_qty * g / total_unresolved)
+                    city_purchase_split[c] = q
+                    allocated += q
+                leftover = buy_qty - allocated
+                if leftover > 0:
+                    target_c = max(shares, key=lambda c: shares[c])
+                    city_purchase_split[target_c] += leftover
+            else:
+                city_purchase_split["Алматы"] = buy_qty
+        it["city_purchase_split"] = city_purchase_split
+
+    # 08.08 — итог по городам НОВОЙ закупки (сумма city_purchase_split по всем
+    # SKU с buy>0) — отвечает на прямой вопрос Дамира "после закупа понять, в
+    # какие города и как это разделить", на уровне сводки, а не только по
+    # каждому SKU в таблице.
+    purchase_split_totals = {c: {"units": 0.0, "value": 0.0} for c in CITIES}
+    for it in items:
+        cps = it.get("city_purchase_split") or {}
+        for c in CITIES:
+            q = cps.get(c) or 0
+            purchase_split_totals[c]["units"] += q
+            purchase_split_totals[c]["value"] += q * (it.get("price") or 0)
+    for c in purchase_split_totals:
+        purchase_split_totals[c]["units"] = round(purchase_split_totals[c]["units"], 0)
+        purchase_split_totals[c]["value"] = round(purchase_split_totals[c]["value"], 0)
 
     # 08.08 — по ценности (цена×кол-во), не по штукам: раньше сортировка шла
     # по qty, из-за чего дешёвая бытовая мелочь оптом (напр. 58 фритюрниц)
@@ -2456,6 +2508,7 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         "no_stock_data": sorted(no_stock_data, key=lambda x: -x["mvel_retail"])[:50],
         "city_sales_totals": city_sales_totals,
         "city_transfers": city_transfers,
+        "purchase_split_totals": purchase_split_totals,
         "months_used": sorted(months_used_labels, key=_month_sort_key),
         "counts": {t: sum(1 for it in items if it["tier"] == t) for t in TIER_ORDER},
         "target_cover_days": TARGET_COVER_DAYS,
@@ -2469,6 +2522,15 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             "по прямому указанию Дамира 08.08 — точных цифр в CRM и документах логистики нет "
             "(\"используется допущение «быстро» без цифры\"), это рабочая гипотеза, не измеренный факт; "
             "уточнить реальным сроком, когда появится",
+            "city_purchase_split/purchase_split_totals (08.08, прямое указание Дамира): суммы "
+            "«Купить» делятся по городам пропорционально НЕРЕШЁННОМУ дефициту после city_transfers "
+            "(т.е. после того, как учтена возможность закрыть нехватку перемещением уже существующего "
+            "стока внутри страны). Если ни в одном городе такого дефицита по формуле нет (buy пришёл "
+            "не из сырой городской скорости продаж, а из буфера/пайплайна) — вся партия по умолчанию "
+            "уходит в Алматы (Хаб Первомай), это и физически верно (первая точка приезда), просто "
+            "дальнейшее решение вручную. Наследует все ограничения city_plan/city_transfers выше: "
+            "T+0/1-гипотеза плеча и (для SKU с высокой kaspi_share_pct) ненадёжность city-сигнала "
+            "по Kaspi, пока не появится 3-файловый экспорт по городам вместо текущего.",
             "city_sales_totals/city_plan — факт-разбивка по городам готова; цифры ПЛАНА продаж "
             "по городам ещё не переданы Дамиром (обещал скинуть позже) — сравнения план vs факт "
             "пока нет, есть только факт",
