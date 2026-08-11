@@ -58,6 +58,16 @@ def _vetka_lower_bound(vetka: str) -> int:
     return int(m.group()) if m else 0
 
 
+# Rule 1 (see apply_business_rules): below this many litres a freezer is
+# household equipment, not commercial — with the exemptions below.
+_MIN_FREEZER_LITRES = 400
+
+# Subtypes the 400 L floor does NOT apply to. "бонета" per business owner
+# 11.08.2026: an open-top retail display freezer is commercial equipment at
+# any capacity. Spelling variants included because both appear in historical
+# uploads ("Бонета" / "Боета" / lowercase "бонета").
+_VOLUME_RULE_EXEMPT_TIPS = {"бонета", "бонета ", "боета"}
+
 _TABLETOP_RE = re.compile(r"настольн", re.IGNORECASE)
 
 # Matches a month string that's a word followed by a trailing 1-2 digit
@@ -81,11 +91,34 @@ def apply_business_rules(rows: list[dict]) -> list[dict]:
     applies everywhere (all tabs, all dashboards, AI context) with no risk
     of a dashboard being missed.
 
-    Rule 1 — Ларь minimum volume:
-        For chest-freezer ("Ларь") products, only include rows whose
-        vetka (liter range) starts at 400 L or above.
-        Rationale: sub-400 L chest freezers are a different product class
-        and distort category analytics.
+    Rule 1 — 400 L minimum volume, all freezer subtypes EXCEPT бонета:
+        In the "freezers" department, exclude any row whose vetka (liter
+        range) starts below 400 L — with one deliberate exception: бонета.
+        Rationale (business owner, 11.08.2026): below 400 L the product is
+        household equipment regardless of subtype, and household units
+        distort market share, ветка segmentation and procurement priority
+        for the whole department. Бонета is the exception because бонеты
+        are commercial by construction at any capacity (open-top display
+        freezer for retail floors — there is no household equivalent).
+
+        Two safeguards on top of the threshold:
+
+        (a) A row with NO vetka at all is NOT excluded. An empty vetka
+            means "we failed to classify this SKU", not "this SKU is
+            small" — _vetka_lower_bound returns 0 for an empty string,
+            which would otherwise silently delete every unclassified row.
+            Found live 11.08: Polair CM110-S and LUX 2X (commercial
+            cabinets, 1.1M ₸ + 0.45M ₸ July revenue) have no vetka yet and
+            were being dropped as if they were sub-400L household units.
+            Unclassified rows stay visible so the gap is fixable instead
+            of invisible.
+
+        (b) Scoped to department == "freezers". The same тип strings can
+            legitimately appear elsewhere and 400 L is a freezer-specific
+            business threshold, not a universal one.
+
+        Previously this rule was scoped to тип == "Ларь" only, which let
+        sub-400 L шкаф/шок rows through while dropping every small Ларь.
 
     Rule 2 — Ice maker tabletop exclusion:
         For ice makers ("Льдогенератор"), exclude tabletop units entirely.
@@ -145,9 +178,12 @@ def apply_business_rules(rows: list[dict]) -> list[dict]:
     result = []
     for r in rows:
         tip = (r.get("tip") or "").strip().lower()
-        if tip == "ларь":
-            lb = _vetka_lower_bound(r.get("vetka") or "")
-            if lb < 400:
+        dept = (r.get("department") or "")
+        # Rule 1 — see docstring. Бонета exempt; empty vetka exempt (unknown
+        # ≠ small); freezers only.
+        if dept == "freezers" and tip not in _VOLUME_RULE_EXEMPT_TIPS:
+            vetka_raw = (r.get("vetka") or "").strip()
+            if vetka_raw and _vetka_lower_bound(vetka_raw) < _MIN_FREEZER_LITRES:
                 continue
         if tip == "льдогенератор":
             if _TABLETOP_RE.search(r.get("name") or ""):
