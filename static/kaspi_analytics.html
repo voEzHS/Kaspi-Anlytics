@@ -1062,6 +1062,7 @@ textarea.inp::placeholder{color:var(--muted)}
             <span class="st"><i class="ti ti-list-check" style="color:var(--yellow)"></i> План закупа по тирам</span>
             <div id="zk-scope-bar" style="display:flex;gap:5px;flex-wrap:wrap"></div>
           </div>
+          <div id="zk-action-order" style="display:none;margin:12px 20px 0;padding:0"></div>
           <p id="zk-months-note" style="font-size:11px;color:var(--muted);padding:12px 20px 0;margin:0"></p>
           <div style="overflow-x:auto">
             <table class="tbl" id="zk-t">
@@ -1077,6 +1078,16 @@ textarea.inp::placeholder{color:var(--muted)}
                 <th style="text-align:right">₸ потенциал</th>
               </tr></thead>
               <tbody id="zk-body"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="sec" id="zk-stop-wrap" style="display:none;border:1px solid rgba(255,196,0,.35)">
+          <div class="sh"><span class="st"><i class="ti ti-player-pause" style="color:var(--yellow)"></i> Стоп-листы с живым спросом и стоком — продажи, выключенные решением</span></div>
+          <p style="font-size:11px;color:var(--muted);padding:12px 20px 0;margin:0">Товар продавался в трейлинг-окне, лежит на складе, но статус в CRM не «Продается» — продажи заморожены статусом, не отсутствием товара. Это самые дешёвые деньги: возврат в продажу не требует ни тенге закупа. Спрос мерян окном 3 месяцев; «свежих 0» = мог затухнуть — решение по каждой позиции за человеком, не скопом.</p>
+          <div style="overflow-x:auto">
+            <table class="tbl" id="zk-stop-t">
+              <thead><tr><th>Артикул</th><th>Название</th><th>Категория</th><th>Статус</th><th style="text-align:right">Спрос/мес</th><th style="text-align:right">Свежие</th><th style="text-align:right">Сток</th><th style="text-align:right">₸/мес заморожено</th></tr></thead>
+              <tbody id="zk-stop-body"></tbody>
             </table>
           </div>
         </div>
@@ -3513,6 +3524,57 @@ async function renderZakup(){
     // ── переключатель охвата ──
     renderZkScopeBar();
 
+    // 12.08 — «Стоп-листы с живым спросом»: продажи, замороженные статусом.
+    const stopD=proc.stopped_with_demand||[];
+    const stopWrap=g('zk-stop-wrap');
+    if(stopWrap){
+      if(stopD.length){
+        stopWrap.style.display='';
+        g('zk-stop-body').innerHTML=stopD.map(x=>{
+          const stale=(x.qty_recent||0)<=0;
+          return `<tr>
+            <td style="font-family:monospace;font-size:12px;color:var(--muted)">${x.sku}</td>
+            <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(String(x.name||''))}">${x.name||'—'}</td>
+            <td style="color:var(--muted);font-size:12px">${x.category||'—'}</td>
+            <td style="color:var(--red);font-size:12px">${x.status}</td>
+            <td style="text-align:right">${x.mvel_retail}</td>
+            <td style="text-align:right;color:${stale?'var(--muted)':'var(--green)'}">${x.qty_recent}${stale?' <span style="font-size:10px">(затух?)</span>':''}</td>
+            <td style="text-align:right;font-weight:700">${fmtN(x.kaspi_stock)}</td>
+            <td style="text-align:right;font-weight:700;color:var(--yellow)">${fmtR(x.frozen_monthly)}</td>
+          </tr>`;
+        }).join('');
+      } else { stopWrap.style.display='none'; }
+    }
+
+    // 12.08 — панель «Порядок действий директора»: сначала продажи без
+    // бюджета (снять стопы, вернуть листинги), потом закуп за деньги.
+    // Родилась из аудита: бесплатных продаж в списках оказалось в разы
+    // больше, чем защищает весь бюджет закупа.
+    const aoEl=g('zk-action-order');
+    if(aoEl){
+      const lostL=(proc.kaspi_lost_listings||[]).filter(x=>(x.crm_stock||0)>0);
+      const buyRows=(proc.items||[]).filter(x=>(x.suggest_qty||0)>0);
+      const stopSum=stopD.reduce((s,x)=>s+(x.frozen_monthly||0),0);
+      const lostSum=lostL.reduce((s,x)=>s+(x.prev_revenue||0),0);
+      const buyBudget=buyRows.reduce((s,x)=>s+(x.price||0)*(x.suggest_qty||0),0);
+      const buyMonthly=buyRows.reduce((s,x)=>s+((x.monthly_value!=null?x.monthly_value:(x.price||0)*(x.mvel_effective||x.mvel_retail||0))||0),0);
+      const card=(step,title,val,sub,color,anchor)=>`
+        <div onclick="document.getElementById('${anchor}')?.scrollIntoView({behavior:'smooth'})" style="flex:1;min-width:200px;cursor:pointer;border:1px solid ${color}44;border-radius:10px;padding:10px 14px;background:${color}0d">
+          <div style="font-size:10px;color:${color};font-weight:700;text-transform:uppercase;letter-spacing:.5px">Шаг ${step} · ${title}</div>
+          <div style="font-size:16px;font-weight:800;color:var(--text);margin-top:2px">${val}</div>
+          <div style="font-size:10.5px;color:var(--muted)">${sub}</div>
+        </div>`;
+      if(stopD.length||lostL.length||buyRows.length){
+        aoEl.style.display='';
+        aoEl.innerHTML=`<div style="display:flex;gap:10px;flex-wrap:wrap">
+          ${card(1,'Снять стопы',`до ${fmtR(stopSum)}/мес`,`${stopD.length} поз. со спросом и стоком · бюджет 0 ₸`,'var(--yellow)','zk-stop-wrap')}
+          ${card(2,'Вернуть листинги',`до ${fmtR(lostSum)}/мес`,`${lostL.length} поз. со стоком на складе · бюджет 0 ₸`,'var(--red)','zk-lost-wrap')}
+          ${card(3,'Закуп за деньги',fmtR(buyBudget),`${buyRows.length} строк · защищает ~${fmtR(buyMonthly)}/мес оборота`,'var(--green)','zk-t')}
+        </div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:6px">Порядок неслучаен: шаги 1-2 дают продажи без единого тенге бюджета — сначала они, потом закуп. Клик по карточке ведёт к списку.</div>`;
+      } else { aoEl.style.display='none'; }
+    }
+
     // Ф2 Закуп v3 (11.08) — пропавшие с Kaspi листинги наших брендов.
     const lost=proc.kaspi_lost_listings||[];
     const lostWrap=g('zk-lost-wrap');
@@ -3694,6 +3756,7 @@ function renderZkTable(){
     if(it.stale_demand) flags+=`<i class="ti ti-clock-off" title="СПРОС ЗАТУХ: средняя скорость ${it.mvel_retail}/мес набрана в начале окна, но в последнем завершённом и текущем месяце — 0 продаж. Из активного закупа исключён (T3), пока продажи не подтвердятся." style="color:var(--muted);font-size:12px;margin-left:5px"></i>`;
     if(it.status_conflict) flags+=`<i class="ti ti-alert-square" title="ПРОТИВОРЕЧИЕ: статус «${it.status}», но есть свежие продажи (${it.qty_recent} шт). Возможно, стоп автоматический из-за нулевого остатка — если товар надо вернуть в продажу, сначала снять стоп в CRM, тогда позиция вернётся в расчёт закупа." style="color:var(--red);font-size:12px;margin-left:5px"></i>`;
     if(it.season_suppress_src==='fallback') flags+=`<i class="ti ti-calendar-off" title="Подавлено по СПРАВОЧНОЙ сезонности (файл продаж короче 6 мес, файловой сезонности нет): окно прибытия товара целиком в мёртвых месяцах категории. Источник: полногодовая проверка 05.08 + указание директора." style="color:var(--purple);font-size:12px;margin-left:5px"></i>`;
+    if((it.suggest_qty||0)>0&&it.market&&(it.market.vetka_trend_pct||0)<=-20) flags+=`<i class="ti ti-trending-down" title="ВЕТКА ПАДАЕТ ${it.market.vetka_trend_pct}% за месяц (рынок ${it.market.vetka}). Доливку до буфера покупать можно — риск копеечный при живых продажах, но НАРАЩИВАТЬ позицию сверх доливки только после разбора причины падения (аудит 12.08)." style="color:var(--red);font-size:12px;margin-left:5px"></i>`;
     const pipeTitle=`Близко (≤15д, отправлено с завода): ${fmtN(it.near_pipeline)} · Далеко (заказано, до ${TARGET_COVER_DAYS_LABEL}): ${fmtN(it.far_pipeline)}`;
     const wp=it.wholesale_pattern;
     const wpTitle = wp ? `Опт/дилеры за 13 мес: ${fmtN(wp.total_13mo)} шт (не входит в буфер — см. документ)` : '';

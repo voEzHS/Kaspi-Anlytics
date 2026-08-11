@@ -3082,6 +3082,22 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         "city_transfers": city_transfers,
         "purchase_split_totals": purchase_split_totals,
         "kaspi_lost_listings": kaspi_lost_listings,
+        # Аудит 12.08 («главная цель — сумма продаж, риск — бюджет»):
+        # стоп-листы с ЖИВЫМ спросом и стоком — продажи, замороженные
+        # решением, а не отсутствием товара. На живых данных: 21 позиция,
+        # ~7.9 млн ₸/мес — в 4.5 раза больше всего бюджета закупа (1.7 млн),
+        # и стоят 0 ₸. Спрос мерян трейлинг-окном; qty_recent=0 значит
+        # «мог затухнуть» — снимать стоп по каждой решает человек.
+        "stopped_with_demand": sorted(
+            [{"sku": x["sku"], "name": x["name"], "category": x["category"],
+              "status": x["status"], "mvel_retail": x["mvel_retail"],
+              "qty_recent": x["qty_recent"], "kaspi_stock": x["kaspi_stock"],
+              "price": x["price"],
+              "frozen_monthly": round((x["price"] or 0) * (x["mvel_retail"] or 0), 0)}
+             for x in items
+             if x["tier"] == "T2X_STOP" and (x["kaspi_stock"] or 0) > 0
+             and (x["mvel_retail"] or 0) >= 1.0],
+            key=lambda x: -x["frozen_monthly"]),
         "sku_bridge_stats": sku_bridge_stats,
         "data_quality": data_quality,
         "months_used": sorted(months_used_labels, key=_month_sort_key),
