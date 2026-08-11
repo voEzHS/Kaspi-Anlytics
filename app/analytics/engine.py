@@ -2,7 +2,7 @@
 import math
 import re
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 # Canonical month order for chronological sorting
@@ -2137,8 +2137,26 @@ MANUAL_NAME_OVERRIDES = {
 }
 
 
+def _kaspi_month_key(mstr) -> Optional[tuple]:
+    """«Июль 2026» → (2026, 7); «Июль» → (0, 7); мусор → None. Год-less
+    месяцы сортируются по номеру — на стыке годов (Дек→Янв) сравнение
+    станет неверным, к этому моменту в выгрузках должен появиться год."""
+    parts = str(mstr or "").strip().split()
+    if not parts:
+        return None
+    w = parts[0].lower()
+    idx = _MONTH_IDX.get(w, _MONTH_IDX.get(w[:3]))
+    if idx is None:
+        return None
+    year = 0
+    if len(parts) > 1 and parts[1].isdigit():
+        year = int(parts[1])
+    return (year, idx)
+
+
 def calc_kaspi_lost_listings(rows: list[dict], stock_by_sku: dict,
-                              crm_catalog: dict, our_brands: set) -> tuple[list, dict]:
+                              crm_catalog: dict, our_brands: set,
+                              bridge: Optional[dict] = None) -> tuple[list, dict]:
     """
     Ф2 Закуп v3 (11.08) — «пропавшие листинги»: наши kod'ы, которые были в
     предыдущем месяце Kaspi-матрицы отдела и исчезли в последнем. Ровно так
@@ -2163,29 +2181,19 @@ def calc_kaspi_lost_listings(rows: list[dict], stock_by_sku: dict,
     if not rows or not our_brands:
         return [], {}
     ob = {str(b).strip().upper() for b in our_brands}
+    _mkey = _kaspi_month_key
 
-    def _mkey(mstr):
-        parts = str(mstr or "").strip().split()
-        if not parts:
-            return None
-        w = parts[0].lower()
-        idx = _MONTH_IDX.get(w, _MONTH_IDX.get(w[:3]))
-        if idx is None:
-            return None
-        year = 0
-        if len(parts) > 1 and parts[1].isdigit():
-            year = int(parts[1])
-        return (year, idx)
-
-    # Мост строится один раз на все отделы.
-    kaspi_seen: dict[str, dict] = {}
-    for r in rows:
-        kod = str(r.get("kod") or "").strip()
-        if kod and kod not in kaspi_seen:
-            kaspi_seen[kod] = {"kod": kod, "name": r.get("name"), "brand": r.get("brand")}
-    bridge = build_bridge(
-        [{"sku": s, "name": n} for s, n in crm_catalog.items()],
-        list(kaspi_seen.values()), brand_family=ob)
+    if bridge is None:
+        # standalone-режим (тесты): мост строится здесь; из calc_procurement_v2
+        # передаётся готовый — он там нужен и для рыночного контекста items.
+        kaspi_seen: dict[str, dict] = {}
+        for r in rows:
+            kod = str(r.get("kod") or "").strip()
+            if kod and kod not in kaspi_seen:
+                kaspi_seen[kod] = {"kod": kod, "name": r.get("name"), "brand": r.get("brand")}
+        bridge = build_bridge(
+            [{"sku": s, "name": n} for s, n in crm_catalog.items()],
+            list(kaspi_seen.values()), brand_family=ob)
 
     by_dept: dict[str, list] = defaultdict(list)
     for r in rows:
@@ -2256,7 +2264,8 @@ def calc_kaspi_lost_listings(rows: list[dict], stock_by_sku: dict,
 
 def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: list[dict],
                          scope_categories: Optional[set] = None,
-                         our_brands: Optional[set] = None) -> dict:
+                         our_brands: Optional[set] = None,
+                         today: Optional[date] = None) -> dict:
     """
     rows: продажи Kaspi этого отдела из KaspiRow (после apply_business_rules)
           — используются ТОЛЬКО для сверки с Kaspi-каналом нового файла
@@ -2279,7 +2288,8 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
     # иначе усреднение по неполному месяцу (напр. выгрузка 4 числа = 4 дня
     # из ~30) занижает скорость продаж именно в момент, когда решение
     # нужнее всего. Найдено тестированием на реальном файле 05.08.2026.
-    today = date.today()
+    # 11.08: параметр today (для тестов и воспроизводимости) — НЕ затирать.
+    today = today or date.today()
     if all_dates and all_dates[-1] == (today.year, today.month):
         all_dates = all_dates[:-1]
     months_used = all_dates[-_TRAILING_MONTHS:]
@@ -2416,9 +2426,11 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         if k:
             stock_by_sku[k] = s
 
-    # ── Ф2 (11.08): пропавшие с Kaspi листинги наших брендов ─────────────
+    # ── Ф2 (11.08): мост SKU↔kod + рыночный контекст Kaspi ───────────────
     # Каталог CRM для моста: имена из остатков + имена из файла продаж
     # (остатки — основной источник, продажи добирают SKU без строки стока).
+    from app.analytics.sku_bridge import build_bridge
+    _ob_set = {str(b).strip().upper() for b in (our_brands or set())}
     _crm_catalog: dict[str, str] = {}
     for s in stock_rows:
         _sk = str(s.get("sku") or "").strip()
@@ -2429,8 +2441,72 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         _sk = str(r.get("sku") or "").strip()
         if _sk and _sk not in _crm_catalog and r.get("name"):
             _crm_catalog[_sk] = str(r.get("name")).strip()
+    _kaspi_seen: dict[str, dict] = {}
+    for r in rows:
+        _kd = str(r.get("kod") or "").strip()
+        if _kd and _kd not in _kaspi_seen:
+            _kaspi_seen[_kd] = {"kod": _kd, "name": r.get("name"), "brand": r.get("brand")}
+    _bridge = build_bridge(
+        [{"sku": s, "name": n} for s, n in _crm_catalog.items()],
+        list(_kaspi_seen.values()), brand_family=_ob_set) if _kaspi_seen and _crm_catalog \
+        else {"sku_to_kods": {}, "kod_to_skus": {}, "stats": {}}
+
     kaspi_lost_listings, sku_bridge_stats = calc_kaspi_lost_listings(
-        rows, stock_by_sku, _crm_catalog, our_brands or set())
+        rows, stock_by_sku, _crm_catalog, our_brands or set(), bridge=_bridge)
+    sku_bridge_stats = sku_bridge_stats or _bridge["stats"]
+
+    # ── C3 (11.08, «исправляй» П4): рыночные карты по последнему месяцу
+    # Kaspi-матрицы каждого отдела — ёмкость ветки, наша доля, тренд.
+    _dept_mkeys: dict[str, dict] = {}
+    for r in rows:
+        _mk = _kaspi_month_key(r.get("month"))
+        if _mk:
+            _dept_mkeys.setdefault(r.get("department") or "", {})[_mk] = True
+    _dept_last_prev: dict[str, tuple] = {}
+    for _dp, _mks in _dept_mkeys.items():
+        _oo = sorted(_mks)
+        _dept_last_prev[_dp] = (_oo[-1], _oo[-2] if len(_oo) > 1 else None)
+
+    _vetka_rev_last: dict[tuple, float] = defaultdict(float)
+    _vetka_rev_prev: dict[tuple, float] = defaultdict(float)
+    _vetka_our_last: dict[tuple, float] = defaultdict(float)
+    _kod_latest: dict[str, dict] = {}
+    for r in rows:
+        _dp = r.get("department") or ""
+        _lp = _dept_last_prev.get(_dp)
+        if not _lp:
+            continue
+        _mk = _kaspi_month_key(r.get("month"))
+        _vet = (r.get("vetka") or "").strip()
+        _kd = str(r.get("kod") or "").strip()
+        if _mk == _lp[0]:
+            if _vet:
+                _vetka_rev_last[(_dp, _vet)] += r.get("revenue") or 0
+                if str(r.get("brand") or "").strip().upper() in _ob_set:
+                    _vetka_our_last[(_dp, _vet)] += r.get("revenue") or 0
+            if _kd:
+                _e = _kod_latest.setdefault(_kd, {"dept": _dp, "vetka": _vet,
+                                                   "units": 0.0, "sellers": 0.0})
+                _e["units"] += r.get("units") or 0
+                _e["sellers"] = max(_e["sellers"], r.get("sellers") or 0)
+                if _vet and not _e["vetka"]:
+                    _e["vetka"] = _vet
+        elif _lp[1] is not None and _mk == _lp[1]:
+            if _vet:
+                _vetka_rev_prev[(_dp, _vet)] += r.get("revenue") or 0
+
+    # ── Ф3-фикс из самокритики аудита 11.08: окно прибытия якорится на
+    # РЕАЛЬНОЕ «сегодня», а не на последний месяц файла — файл, залитый с
+    # лагом, сдвигал окно в прошлое. Заказ размещается сегодня → приезжает
+    # t+45д → продаётся до t+105д; берём календарные месяцы трёх точек
+    # окна (начало/середина/конец).
+    _today = today  # уже разрешён выше (параметр или date.today())
+    _arrival_months: list[int] = []
+    for _off in (LEAD_TIME_DAYS, LEAD_TIME_DAYS + TARGET_COVER_DAYS // 2,
+                 LEAD_TIME_DAYS + TARGET_COVER_DAYS):
+        _am = (_today + timedelta(days=_off)).month
+        if _am not in _arrival_months:
+            _arrival_months.append(_am)
 
     # 08.08 — «под заказ» категории определяются ЗАРАНЕЕ, отдельным проходом,
     # ДО расчёта тира/suggest_qty (не после, как было). Раньше
@@ -2520,8 +2596,7 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
                 # n_months, как и sum/n_months у сырого mvel_retail
                 season_level = sum(deseason_terms) / n_months
             win = []
-            for i in (2, 3, 4):
-                m = ((cur_month - 1 + i) % 12) + 1
+            for m in _arrival_months:
                 v = cat_season.get(m)
                 if v is not None:
                     win.append(v)
@@ -2618,6 +2693,74 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         _baseline_qty = max(0, math.ceil(_baseline_need)) if tier in ("T1_CRITICAL", "T2_PIPELINE") else 0
         season_uplift_units = suggest_qty - _baseline_qty
 
+        # ── C3 (11.08, аудит П4): рыночный контекст через мост SKU↔kod ──
+        # Ветка листинга, ёмкость её рынка в последнем месяце Kaspi-матрицы,
+        # наша доля и тренд к предыдущему месяцу. Не меняет тир — участвует
+        # в сортировке внутри тира (растущий сегмент поднимается выше при
+        # равном ₸-потенциале, см. сортировку ниже).
+        market = None
+        demand_underest = None
+        _links = _bridge["sku_to_kods"].get(sku) or []
+        if _links:
+            _cands = [(_l["kod"], _kod_latest[_l["kod"]])
+                      for _l in _links if _l["kod"] in _kod_latest]
+            _vk = next(((e["dept"], e["vetka"]) for _k, e in _cands if e["vetka"]), None)
+            if _vk:
+                _mr = _vetka_rev_last.get(_vk, 0.0)
+                _mp = _vetka_rev_prev.get(_vk, 0.0)
+                market = {
+                    "department": _vk[0], "vetka": _vk[1],
+                    "vetka_market_month": round(_mr, 0),
+                    "our_share_pct": round(_vetka_our_last.get(_vk, 0.0) / _mr * 100, 1)
+                                     if _mr > 0 else None,
+                    "vetka_trend_pct": round((_mr - _mp) / _mp * 100, 1) if _mp > 0 else None,
+                }
+            # ── Аудит П3: детектор заниженного спроса (стокаут-искажение).
+            # Kaspi-матрица показывает продажи ЛИСТИНГА за последний месяц
+            # независимо от того, был ли у нас товар — если листинг продал
+            # заметно больше, чем CRM-скорость этого SKU, CRM-спрос почти
+            # наверняка занижен стокаутом/дырой в данных. Гейт sellers<=2:
+            # на листинге с многими продавцами штуки не только наши — не
+            # приписываем себе чужие продажи. НЕ раздуваем suggest_qty
+            # автоматически (урок отката v1-фикса) — показываем обе цифры
+            # и альтернативный объём, решение за человеком.
+            _site_units = sum(e["units"] for _k, e in _cands)
+            _max_sellers = max((e["sellers"] for _k, e in _cands), default=0)
+            if (_site_units >= 2 and _max_sellers <= 2
+                    and _site_units > 1.5 * max(mvel_retail, 0.1)):
+                _alt_rate = max(_site_units, mvel_effective)
+                _alt_need = (TARGET_COVER_DAYS / 30.0) * _alt_rate - kaspi_stock - covered_pipeline
+                demand_underest = {
+                    "site_kaspi_mvel": round(_site_units, 1),
+                    "crm_mvel": round(mvel_retail, 2),
+                    "alt_suggest_qty": max(0, math.ceil(_alt_need)),
+                }
+
+        # ── Аудит П5: опт жрёт тот же склад, но исключён из спроса (лумпи).
+        # Буфер, посчитанный только по рознице, может сгореть одним дилерским
+        # заказом. Считаем скорость опта в том же трейлинг-окне и флагуем,
+        # когда покрытие «достаточно» по рознице, но проваливается с учётом
+        # опта. Тир не меняем (прозрачность) — флаг + честное покрытие.
+        _ws_window_qty = 0.0
+        for _o in d["wholesale_orders"]:
+            try:
+                _oy, _om = int(str(_o["date"])[0:4]), int(str(_o["date"])[5:7])
+            except (ValueError, TypeError):
+                continue
+            if (_oy, _om) in months_used:
+                _ws_window_qty += _o.get("qty") or 0
+        wholesale_rate = round(_ws_window_qty / n_months, 2)
+        wholesale_risk = None
+        _comb = mvel_effective + wholesale_rate
+        if wholesale_rate > 0 and _comb > 0:
+            _ds_ws = kaspi_stock / (_comb / 30.0)
+            if (cover_months is not None and cover_months * 30 >= TARGET_COVER_DAYS
+                    and _ds_ws < TARGET_COVER_DAYS):
+                wholesale_risk = {
+                    "wholesale_rate_monthly": wholesale_rate,
+                    "cover_months_with_wholesale": round(_ds_ws / 30, 1),
+                }
+
         wholesale_orders = sorted(d["wholesale_orders"], key=lambda o: o["date"])[-5:]
         wholesale_total = sum(o["qty"] for o in d["wholesale_orders"])
 
@@ -2691,6 +2834,9 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
                                   if wholesale_orders else None,
             "kaspi_divergence": kaspi_divergence,
             "made_to_order_group": is_made_to_order,
+            "market": market,
+            "demand_underest": demand_underest,
+            "wholesale_risk": wholesale_risk,
         }
         items.append(item)
 
@@ -2856,12 +3002,20 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
 
     TIER_ORDER = {"T1_CRITICAL": 0, "T2_PIPELINE": 1, "T2S_SEASON_OFF": 2, "T2M_MADE_TO_ORDER": 3,
                   "T3A_LISTING": 4, "T3B_LOWPRI": 5, "T4_OK": 6}
-    # Сортировка внутри тира — по ₸-потенциалу (цена × Купить), не по штукам:
-    # это и есть ответ на вопрос "что реально двигает сумму продаж" внутри
-    # одного уровня срочности. Штуки (-suggest_qty) и скорость (-mvel_retail)
-    # остаются вторым/третьим критерием — разводят позиции без цены (напр.
-    # SKU без "Цена" в CRM, см. фикс от 06.08 про "Не указано").
-    items.sort(key=lambda it: (TIER_ORDER.get(it["tier"], 9), -it["revenue_potential"],
+    # Сортировка внутри тира — по ₸-потенциалу (цена × Купить), не по штукам.
+    # C3 (11.08): потенциал усиливается ростом рынка ветки — то же вложение
+    # в растущем сегменте покупает больше доли (сегмент ларей +46%/мес — мы
+    # его пропустили ровно потому, что закуп не видел рынок). Буст капится
+    # +50%, только вверх (падающий рынок НЕ топит позицию — риск дефицита
+    # от этого не исчезает), только при известном тренде. Прозрачность: сам
+    # тир не меняется, буст виден в item.market.vetka_trend_pct.
+    def _sort_value(it):
+        base = it["revenue_potential"]
+        m = it.get("market")
+        if base > 0 and m and (m.get("vetka_trend_pct") or 0) > 0:
+            return base * (1 + min(m["vetka_trend_pct"], 50) / 100.0)
+        return base
+    items.sort(key=lambda it: (TIER_ORDER.get(it["tier"], 9), -_sort_value(it),
                                 -it["suggest_qty"], -it["mvel_retail"]))
 
     return {
