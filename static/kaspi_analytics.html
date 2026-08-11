@@ -3388,6 +3388,10 @@ const ZK_TIER={
   // (mvel_retail) остаётся видимым — это не "не продаётся", это другая
   // модель поставки.
   T2M_MADE_TO_ORDER:{label:'T2m',full:'T2m · Под заказ',color:'var(--ice)',hint:'нет физ. стока в норме для категории — складской буфер не считаем, нужна ручная логика лид-тайма'},
+  // 12.08 (кейс CF-E4F): статус CRM ≠ «Продается» перекрывает любой тир.
+  // Товар остановлен человеком — «срочно купить» для него не существует,
+  // пока человек стоп не снимет.
+  T2X_STOP:{label:'Стоп',full:'Стоп-лист / снят',color:'var(--red)',hint:'статус в CRM не «Продается» — закуп заблокирован до решения человека; если есть свежие продажи, увидишь флаг противоречия'},
   T3A_LISTING:{label:'T3a',full:'T3a · Не продаётся',color:'var(--blue)',hint:'сток есть, розничных продаж нет'},
   T3B_LOWPRI:{label:'T3b',full:'T3b · Низкий приоритет',color:'var(--muted)',hint:'не продаётся и стока нет'},
   T4_OK:{label:'T4',full:'T4 · Норма',color:'var(--green)',hint:'стока достаточно'},
@@ -3507,17 +3511,7 @@ async function renderZakup(){
       : '';
 
     // ── переключатель охвата ──
-    const scopeBar=g('zk-scope-bar');
-    if(scopeBar){
-      const pill=(val,label,color)=>{
-        const active=window._zkScope===val;
-        return `<button onclick="setZkScope('${val}')" style="padding:4px 11px;border-radius:15px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid ${active?color:'var(--border)'};background:${active?color+'1f':'transparent'};color:${active?color:'var(--muted)'}">${label}</button>`;
-      };
-      scopeBar.innerHTML =
-        pill('core','Ядро','var(--ice)') +
-        pill('core+extended','Ядро + Расширенный','var(--blue)') +
-        pill('all','Показать всё (с хвостом)','var(--muted)');
-    }
+    renderZkScopeBar();
 
     // Ф2 Закуп v3 (11.08) — пропавшие с Kaspi листинги наших брендов.
     const lost=proc.kaspi_lost_listings||[];
@@ -3642,7 +3636,28 @@ async function renderZakup(){
 }
 
 const TARGET_COVER_DAYS_LABEL='60д';
+// 12.08 — фикс «Ядро/Ядро+Расширенный не переключается»: бар рисовался один
+// раз при загрузке, активная кнопка не обновлялась при клике (таблица
+// фильтровалась, но визуально ничего не менялось). Теперь бар перерисовывается
+// при каждом переключении + в кнопках счётчики строк, чтобы переключение
+// было видно даже когда верх таблицы совпадает.
+function renderZkScopeBar(){
+  const scopeBar=g('zk-scope-bar');
+  const proc=window._zkProc;
+  if(!scopeBar||!proc) return;
+  const n={core:0,extended:0,tail:0};
+  (proc.items||[]).forEach(it=>{ if(n[it.scope]!=null) n[it.scope]++; });
+  const pill=(val,label,color)=>{
+    const active=window._zkScope===val;
+    return `<button onclick="setZkScope('${val}')" style="padding:4px 11px;border-radius:15px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid ${active?color:'var(--border)'};background:${active?color+'1f':'transparent'};color:${active?color:'var(--muted)'}">${label}</button>`;
+  };
+  scopeBar.innerHTML =
+    pill('core',`Ядро · ${n.core}`,'var(--ice)') +
+    pill('core+extended',`Ядро + Расширенный · ${n.core+n.extended}`,'var(--blue)') +
+    pill('all',`Всё · ${n.core+n.extended+n.tail}`,'var(--muted)');
+}
 function renderZkTable(){
+  renderZkScopeBar();
   const proc=window._zkProc;
   if(!proc) return;
   const scope=window._zkScope||'core+extended';
@@ -3676,6 +3691,9 @@ function renderZkTable(){
     if(it.kaspi_divergence) flags+=`<i class="ti ti-alert-triangle" title="Kaspi-канал в файле продаж (${it.kaspi_divergence.file_kaspi_units} шт) расходится с загрузкой сайта (${it.kaspi_divergence.site_kaspi_units} шт) на ${it.kaspi_divergence.diff_pct}%" style="color:var(--red);font-size:12px;margin-left:5px"></i>`;
     if(it.demand_underest) flags+=`<i class="ti ti-trending-up" title="СПРОС ЗАНИЖЕН? Листинг на Kaspi продал ${it.demand_underest.site_kaspi_mvel} шт за последний месяц (продавцов ≤2 — почти наверняка наши продажи), а CRM-скорость этого SKU всего ${it.demand_underest.crm_mvel}/мес — похоже на стокаут-искажение или дыру в данных. Если верить рынку, «Купить» = ${it.demand_underest.alt_suggest_qty} шт. Автоматически НЕ раздуваем — решение за закупщиком." style="color:var(--red);font-size:12px;margin-left:5px"></i>`;
     if(it.wholesale_risk) flags+=`<i class="ti ti-building-warehouse" title="БУФЕР СГОРАЕТ С УЧЁТОМ ОПТА: по рознице покрытие ${it.cover_months} мес, но опт/дилеры забирают ещё ~${it.wholesale_risk.wholesale_rate_monthly} шт/мес с ТОГО ЖЕ склада → реальное покрытие ${it.wholesale_risk.cover_months_with_wholesale} мес. Тир этого не учитывает (опт лумпи, в спрос не входит) — проверить перед решением «не покупать»." style="color:var(--yellow);font-size:12px;margin-left:5px"></i>`;
+    if(it.stale_demand) flags+=`<i class="ti ti-clock-off" title="СПРОС ЗАТУХ: средняя скорость ${it.mvel_retail}/мес набрана в начале окна, но в последнем завершённом и текущем месяце — 0 продаж. Из активного закупа исключён (T3), пока продажи не подтвердятся." style="color:var(--muted);font-size:12px;margin-left:5px"></i>`;
+    if(it.status_conflict) flags+=`<i class="ti ti-alert-square" title="ПРОТИВОРЕЧИЕ: статус «${it.status}», но есть свежие продажи (${it.qty_recent} шт). Возможно, стоп автоматический из-за нулевого остатка — если товар надо вернуть в продажу, сначала снять стоп в CRM, тогда позиция вернётся в расчёт закупа." style="color:var(--red);font-size:12px;margin-left:5px"></i>`;
+    if(it.season_suppress_src==='fallback') flags+=`<i class="ti ti-calendar-off" title="Подавлено по СПРАВОЧНОЙ сезонности (файл продаж короче 6 мес, файловой сезонности нет): окно прибытия товара целиком в мёртвых месяцах категории. Источник: полногодовая проверка 05.08 + указание директора." style="color:var(--purple);font-size:12px;margin-left:5px"></i>`;
     const pipeTitle=`Близко (≤15д, отправлено с завода): ${fmtN(it.near_pipeline)} · Далеко (заказано, до ${TARGET_COVER_DAYS_LABEL}): ${fmtN(it.far_pipeline)}`;
     const wp=it.wholesale_pattern;
     const wpTitle = wp ? `Опт/дилеры за 13 мес: ${fmtN(wp.total_13mo)} шт (не входит в буфер — см. документ)` : '';

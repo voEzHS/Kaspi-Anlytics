@@ -2073,8 +2073,25 @@ SEASON_FACTOR_CAP_LOW = 0.5
 _DESEASON_CLAMP_LOW = 0.5
 _DESEASON_CLAMP_HIGH = 2.0
 
+# ── Справочная сезонность (12.08) ──────────────────────────────────────────
+# Мёртвые месяцы по категориям, известные БИЗНЕСУ, а не выведенные из
+# текущего файла. Нужна ровно потому, что файловая сезонность требует ≥6
+# месяцев истории: пока файл узкий, у категорий нет НИКАКОЙ сезонной
+# защиты, и мороженщики честно шли в T1 в августе (кейс Дамира 12.08:
+# «закупил бы мороженщики — в корне неверно»; заказ августа приезжает в
+# октябре, к мёртвому сезону). Источник цифр: полногодовая проверка
+# сезонности фризеров 05.08 (задача #112) + прямое указание Дамира.
+# Используется ТОЛЬКО для подавления (T2S) и ТОЛЬКО когда файловой
+# сезонности по категории нет — файл, когда появится, главнее. Довес по
+# справочнику не делается никогда (для довеса нужны величины, а не
+# календарь — не гадаем).
+SEASONAL_FALLBACK_OFF_MONTHS: dict[str, set] = {
+    "Фризеры для мороженого": {9, 10, 11, 12, 1, 2},
+}
 
-def _procurement_classify_v2(mvel_retail, kaspi_stock, near_pipeline, far_pipeline):
+
+def _procurement_classify_v2(mvel_retail, kaspi_stock, near_pipeline, far_pipeline,
+                              recent_ok: bool = True):
     """
     Как _procurement_classify (v1), но: (а) вход — розничная скорость
     продаж, не смешанная с опт; (б) буфер — TARGET_COVER_DAYS (лид-тайм +
@@ -2087,7 +2104,11 @@ def _procurement_classify_v2(mvel_retail, kaspi_stock, near_pipeline, far_pipeli
     """
     mvel_daily = (mvel_retail or 0) / 30.0
     has_pipe = (near_pipeline or 0) > 0 or (far_pipeline or 0) > 0
-    selling = (mvel_retail or 0) >= 1.0
+    # 12.08 (кейс CF-E4F): «продаётся» = скорость есть И спрос подтверждён
+    # свежими продажами (recent_ok = были продажи в последнем завершённом
+    # или текущем месяце). Скорость без свежести — затухший товар: ему
+    # дорога в T3A/T3B (наблюдение), а не в T1 («критично купить»).
+    selling = (mvel_retail or 0) >= 1.0 and recent_ok
 
     days_stock = safe_div(kaspi_stock, mvel_daily, None) if mvel_daily > 0 else None
 
@@ -2381,6 +2402,7 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             "name": r.get("name"), "category": cat, "subgroup": r.get("subgroup"),
             "retail_by_month": defaultdict(float), "wholesale_orders": [],
             "retail_by_city": defaultdict(float),
+            "qty_recent": 0.0,   # продажи в последнем ЗАВЕРШЁННОМ месяце + текущем частичном
             "_last_rev": -1,
         })
         if (r.get("revenue") or 0) >= entry["_last_rev"]:
@@ -2389,6 +2411,12 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         bucket = _channel_bucket(r.get("channel"))
         ym = (d.year, d.month)
         if bucket == "retail":
+            # 12.08, кейс Дамира «CF-E4F в T1»: свежесть спроса. Товар мог
+            # набрать mvel в начале трейлинг-окна и умереть — 0 продаж в
+            # последнем завершённом И в текущем частичном месяце значит
+            # «спрос не подтверждён сейчас», в T1 такому не место.
+            if (months_used and ym == months_used[-1]) or ym == (today.year, today.month):
+                entry["qty_recent"] += r.get("qty") or 0
             if ym in months_used:
                 entry["retail_by_month"][ym] += r.get("qty") or 0
                 # 08.08 — город СКЛАДА, обслужившего продажу (см. докстринг
@@ -2606,62 +2634,50 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
 
         mvel_effective = round(season_level * season_factor, 2)
 
+        stale_demand = mvel_retail >= 1.0 and (d["qty_recent"] or 0) <= 0
         tier, cover_months, cover_months_full, covered_pipeline = _procurement_classify_v2(
-            mvel_effective, kaspi_stock, near_pipeline, far_pipeline)
+            mvel_effective, kaspi_stock, near_pipeline, far_pipeline,
+            recent_ok=not stale_demand)
 
+        # ── Сезонное подавление, редизайн 12.08 (кейс Дамира «система
+        # закупила бы мороженщики в августе»). Прежний триггер смотрел на
+        # ТЕКУЩИЙ месяц («сезон уже кончился?») — но заказ, размещённый в
+        # августе, приезжает в октябре: текущий индекс ещё пиковый, а окно
+        # прибытия уже мёртвое. Правильный вопрос один: «будет ли сезон,
+        # когда товар ПРИЕДЕТ и будет продаваться?» — то есть решает окно
+        # прибытия (_arrival_months, t+45..t+105 от сегодня), а не текущий
+        # месяц. Подавляем, если ВСЁ окно известно и максимум индекса < 0.4.
+        # Неполное окно не подавляет (Ф1: «не знаем» ≠ «ноль»).
+        #
+        # Второй контур — справочная сезонность (fallback): пока файл продаж
+        # короче 6 месяцев, файловой сезонности нет ВООБЩЕ, и категории с
+        # известной бизнесу мёртвой зимой шли в T1 без единого флага. Для
+        # категорий из SEASONAL_FALLBACK_OFF_MONTHS (подтверждены полным
+        # годом 05.08 + прямое указание Дамира 12.08) подавляем по
+        # календарю, если всё окно прибытия внутри мёртвых месяцев.
+        # Файловая сезонность, когда появится, имеет приоритет.
         season_note = None
         season_conflict = False
         season_suppressed = False
+        season_suppress_src = None
         if cat_season and cur_month:
             idx = cat_season.get(cur_month)
             if idx is not None:
                 season_note = {"month_index": idx}
-                # Тир считается по трейлинг-скорости — она может ещё
-                # "помнить" пик сезона, даже когда сам сезон уже кончился
-                # (ровно так фризеры для мороженого весной-летом неверно
-                # попадали в T1 в ручном плане до root-cause фикса v8).
-                # Индекс <0.4 = явный сезонный спад — сначала просто ставим
-                # флаг для прозрачности.
                 if idx < 0.4 and tier in ("T1_CRITICAL", "T2_PIPELINE"):
-                    season_conflict = True
-                    # 07.08 root-cause fix — до этого момента конфликт был
-                    # ТОЛЬКО декоративным флагом: тир и suggest_qty
-                    # оставались как есть, то есть система всё равно
-                    # рекомендовала "срочно закупить" ровно тогда, когда
-                    # директор объяснил (не первый раз), что сезон кончился
-                    # и закупать не нужно. Это тот же баг, что чинили один
-                    # раз офлайн-скриптом (v8, "исключить фризеры из ACTIVE
-                    # тиринга") — но фикс не перенесли в живой движок Закуп
-                    # v2 при его постройке, и он вернулся сюда через
-                    # ревенью-сортировку (дорогой сезонный товар с раздутой
-                    # трейлинг-скоростью взлетел на #1 по ₸-потенциалу).
-                    #
-                    # Не душим по одному "низкому" месяцу — если сезон
-                    # вот-вот начнётся (напр. январь перед мартовским
-                    # стартом фризеров), forward-outlook (макс индекс из
-                    # текущего + ближайших 3 месяцев) это увидит и НЕ
-                    # подавит закуп. Подавляем только если ни текущий, ни
-                    # ближайшие 3 месяца не показывают восстановления спроса
-                    # — то есть сезон не просто низкий сейчас, а не
-                    # собирается расти в горизонте лид-тайма+буфера закупа.
-                    outlook = idx
-                    window_complete = True
-                    for i in range(1, 4):
-                        m = ((cur_month - 1 + i) % 12) + 1
-                        v = cat_season.get(m)
-                        if v is None:
-                            # Ф1 (11.08): месяц вне покрытия файла = «не
-                            # знаем», а не «ноль». Обнулять закуп на
-                            # неполном окне нельзя — ложное подавление
-                            # стоит потерянных продаж в сезон, а ложное
-                            # НЕподавление — лишь временно замороженных
-                            # денег. Подавляем только при полностью
-                            # известном окне.
-                            window_complete = False
-                        else:
-                            outlook = max(outlook, v)
-                    if outlook < 0.4 and window_complete:
-                        season_suppressed = True
+                    season_conflict = True  # информационный флаг, решает окно ниже
+        if tier in ("T1_CRITICAL", "T2_PIPELINE"):
+            if cat_season:
+                win_vals = [cat_season.get(m) for m in _arrival_months]
+                if all(v is not None for v in win_vals) and win_vals \
+                        and max(win_vals) < 0.4:
+                    season_suppressed = True
+                    season_suppress_src = "file"
+            else:
+                _off = SEASONAL_FALLBACK_OFF_MONTHS.get(d["category"])
+                if _off and all(m in _off for m in _arrival_months):
+                    season_suppressed = True
+                    season_suppress_src = "fallback"
 
         if season_suppressed:
             tier = "T2S_SEASON_OFF"
@@ -2677,6 +2693,20 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             # показываем suggest_qty=0 и оставляем скорость продаж как
             # сигнал спроса, а не как "купи ровно столько".
             tier = "T2M_MADE_TO_ORDER"
+
+        # ── Стоп-лист, 12.08 (кейс Дамира «CF-E4F на стоп-листе в T1»):
+        # статус CRM читался в item, но НИКОГДА не участвовал в решении —
+        # на живом проде треть T1+T2 (19 из 56) оказалась «Стоп лист».
+        # Товар, который человек сознательно остановил, не может быть
+        # рекомендацией «срочно купить». Перекрывает ЛЮБОЙ тир. Если при
+        # стопе есть свежие продажи — отдельный флаг противоречия (стоп
+        # может быть автоматическим из-за нуля остатка — тогда решение о
+        # возврате товара принимает человек, видя флаг, а не молчаливый T1).
+        _status_norm = str(st.get("status") or "").strip().lower()
+        status_blocked = bool(_status_norm) and not _status_norm.startswith("продается")
+        status_conflict = status_blocked and (d["qty_recent"] or 0) > 0
+        if status_blocked:
+            tier = "T2X_STOP"
 
         # Целевой объём — по ЭФФЕКТИВНОЙ скорости (уровень × сезон окна
         # прибытия); вычитаем ровно «покрывающий» пайплайн из тира (Ф1).
@@ -2830,6 +2860,10 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             "tier": tier, "suggest_qty": suggest_qty,
             "price": round(price, 0), "revenue_potential": revenue_potential,
             "season_note": season_note, "season_conflict": season_conflict,
+            "season_suppress_src": season_suppress_src,
+            "stale_demand": stale_demand,
+            "status_blocked": status_blocked, "status_conflict": status_conflict,
+            "qty_recent": round(d["qty_recent"] or 0, 1),
             "wholesale_pattern": {"total_13mo": round(wholesale_total, 0), "recent_orders": wholesale_orders}
                                   if wholesale_orders else None,
             "kaspi_divergence": kaspi_divergence,
@@ -3001,7 +3035,7 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             it["possible_duplicate_skus"] = [s for s in skus if s != it["sku"]]
 
     TIER_ORDER = {"T1_CRITICAL": 0, "T2_PIPELINE": 1, "T2S_SEASON_OFF": 2, "T2M_MADE_TO_ORDER": 3,
-                  "T3A_LISTING": 4, "T3B_LOWPRI": 5, "T4_OK": 6}
+                  "T2X_STOP": 4, "T3A_LISTING": 5, "T3B_LOWPRI": 6, "T4_OK": 7}
     # Сортировка внутри тира — по ₸-потенциалу (цена × Купить), не по штукам.
     # C3 (11.08): потенциал усиливается ростом рынка ветки — то же вложение
     # в растущем сегменте покупает больше доли (сегмент ларей +46%/мес — мы
