@@ -62,11 +62,19 @@ def _vetka_lower_bound(vetka: str) -> int:
 # household equipment, not commercial — with the exemptions below.
 _MIN_FREEZER_LITRES = 400
 
-# Subtypes the 400 L floor does NOT apply to. "бонета" per business owner
-# 11.08.2026: an open-top retail display freezer is commercial equipment at
-# any capacity. Spelling variants included because both appear in historical
-# uploads ("Бонета" / "Боета" / lowercase "бонета").
-_VOLUME_RULE_EXEMPT_TIPS = {"бонета", "бонета ", "боета"}
+# Subtypes the 400 L floor does NOT apply to (business owner, 11.08.2026).
+# Both are commercial equipment at any capacity — there is no household
+# version of either, so a small one is a small commercial unit, not a
+# consumer product:
+#   бонета — open-top retail display freezer for shop floors;
+#   шок    — blast chiller / shock freezer, professional kitchen equipment
+#            (deliberately low capacity: it freezes fast, not much).
+# Spelling variants included because several appear across historical
+# uploads ("Бонета" / "Боета", "шок" / "шокер" / "шоковая заморозка").
+_VOLUME_RULE_EXEMPT_TIPS = {
+    "бонета", "боета",
+    "шок", "шокер", "шоковая заморозка", "шоковая",
+}
 
 _TABLETOP_RE = re.compile(r"настольн", re.IGNORECASE)
 
@@ -91,15 +99,18 @@ def apply_business_rules(rows: list[dict]) -> list[dict]:
     applies everywhere (all tabs, all dashboards, AI context) with no risk
     of a dashboard being missed.
 
-    Rule 1 — 400 L minimum volume, all freezer subtypes EXCEPT бонета:
+    Rule 1 — 400 L minimum volume, all freezer subtypes EXCEPT бонета/шок:
         In the "freezers" department, exclude any row whose vetka (liter
-        range) starts below 400 L — with one deliberate exception: бонета.
+        range) starts below 400 L, with two deliberate exceptions —
+        бонета and шок (see _VOLUME_RULE_EXEMPT_TIPS).
         Rationale (business owner, 11.08.2026): below 400 L the product is
         household equipment regardless of subtype, and household units
         distort market share, ветка segmentation and procurement priority
-        for the whole department. Бонета is the exception because бонеты
-        are commercial by construction at any capacity (open-top display
-        freezer for retail floors — there is no household equivalent).
+        for the whole department. The two exempt subtypes are commercial
+        by construction at any capacity — a retail open-top display
+        freezer and a professional blast chiller have no household
+        equivalent, so a small one is a small commercial unit rather than
+        a consumer product.
 
         Two safeguards on top of the threshold:
 
