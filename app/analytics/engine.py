@@ -1990,15 +1990,50 @@ def calc_category_seasonality(channel_rows: list[dict]) -> dict[str, dict[int, f
     """
     Сезонный индекс по категории CRM, ТОЛЬКО по розничным транзакциям (см.
     обоснование в шапке файла — опт искажает сезонность своим циклом
-    закупок, не сезоном конечного спроса). Индекс месяца = продажи в этом
-    календарном месяце / средние продажи по всем 12 месяцам — 1.0 =
-    типичный месяц, <1 = просадка, >1 = пик.
+    закупок, не сезоном конечного спроса). Индекс месяца = средний объём
+    этого календарного месяца / средний объём по наблюдаемым месяцам —
+    1.0 = типичный месяц, <1 = просадка, >1 = пик.
 
-    Требует данные минимум за 6 разных календарных месяцев на категорию,
-    иначе индекс не считается — недостаточно истории, не натягиваем кривую
-    на шум (см. документ п.5).
+    Фикс 11.08 (Ф1 Закуп v3) — три ошибки старой версии, которые выстрелили
+    бы ровно в момент загрузки полного (~13 мес) файла:
+      1) деление на жёсткие 12: при файле в 6-11 месяцев отсутствующие
+         месяцы читались как «спрос = 0», занижали базу, а сами получали
+         индекс 0.0 и попадали под порог сезонного подавления (<0.4) —
+         ложные «не покупай» по живым категориям;
+      2) повтор календарного месяца (13-месячный файл содержит один месяц
+         дважды — прошлогодний и свежий) суммировался без нормализации и
+         получал двойной вес в кривой;
+      3) месяц, которого в покрытии файла нет вообще, был неотличим от
+         месяца с реальным нулём продаж. Теперь такой месяц ОТСУТСТВУЕТ в
+         результате: downstream обязан различать None («не знаем») и 0.0
+         («знаем, что ноль») — и не подавлять закуп на «не знаем».
+
+    Наблюдаемость месяца определяется покрытием ФАЙЛА (есть хоть какие-то
+    розничные строки за (год, месяц)), а не продажами категории: месяц в
+    покрытии файла без продаж категории — настоящий ноль спроса и остаётся
+    нулём. Категория, появившаяся в ассортименте позже начала файла,
+    получит заниженные индексы на «дожизненные» месяцы — известное
+    упрощение: гейт ≥6 месяцев с продажами ограничивает искажение, а
+    альтернатива (угадывать дату запуска категории) — гадание, которое
+    протокол запрещает.
+
+    Требует данные минимум за 6 разных (год, месяц) с продажами на
+    категорию, иначе индекс не считается — недостаточно истории, не
+    натягиваем кривую на шум (см. документ п.5).
     """
     retail = [r for r in channel_rows if _channel_bucket(r.get("channel")) == "retail"]
+
+    # Покрытие файла: сколько раз каждый календарный месяц встречается
+    # среди наблюдаемых (год, месяц) — нормализатор против двойного веса.
+    file_ym: set = set()
+    for r in retail:
+        d = r.get("sale_date")
+        if d:
+            file_ym.add((d.year, d.month))
+    month_occurrences: dict[int, int] = defaultdict(int)
+    for (_y, m) in file_ym:
+        month_occurrences[m] += 1
+
     by_cat_month: dict[str, dict[int, float]] = defaultdict(lambda: defaultdict(float))
     cat_months_seen: dict[str, set] = defaultdict(set)
     for r in retail:
@@ -2013,12 +2048,30 @@ def calc_category_seasonality(channel_rows: list[dict]) -> dict[str, dict[int, f
     for cat, by_month in by_cat_month.items():
         if len(cat_months_seen[cat]) < 6:
             continue
-        total = sum(by_month.values())
-        avg = total / 12.0
+        # Средний объём календарного месяца, нормированный на число его
+        # появлений в файле; месяцы вне покрытия файла не участвуют вовсе.
+        month_avg = {m: by_month.get(m, 0.0) / occ
+                     for m, occ in month_occurrences.items() if occ > 0}
+        if not month_avg:
+            continue
+        avg = sum(month_avg.values()) / len(month_avg)
         if avg <= 0:
             continue
-        result[cat] = {m: round(by_month.get(m, 0.0) / avg, 2) for m in range(1, 13)}
+        result[cat] = {m: round(v / avg, 2) for m, v in month_avg.items()}
     return result
+
+
+# ── Ф3 (11.08, Закуп v3): параметры сезонной модели спроса ────────────────
+# Довес к закупу перед пиком сезона ограничен капом (решение Дамира 11.08:
+# «да, с капом +50%»); срез вниз при мягком спаде — не глубже половины
+# базового объёма (полное обнуление — только через T2S_SEASON_OFF).
+SEASON_FACTOR_CAP_HIGH = 1.5
+SEASON_FACTOR_CAP_LOW = 0.5
+# Защита деления при десезонализации уровня: индекс месяца, на который
+# делим, зажимается в эти пределы, чтобы один шумный месяц с индексом 0.1
+# не раздул «уровень» спроса в 10 раз.
+_DESEASON_CLAMP_LOW = 0.5
+_DESEASON_CLAMP_HIGH = 2.0
 
 
 def _procurement_classify_v2(mvel_retail, kaspi_stock, near_pipeline, far_pipeline):
@@ -2056,7 +2109,11 @@ def _procurement_classify_v2(mvel_retail, kaspi_stock, near_pipeline, far_pipeli
 
     cover_months = round(days_stock / 30, 1) if days_stock is not None else None
     cover_months_full = round(days_stock_full / 30, 1) if days_stock_full is not None else None
-    return tier, cover_months, cover_months_full
+    # covered_pipeline возвращается наружу (Ф1, 11.08), чтобы формула need в
+    # calc_procurement_v2 вычитала РОВНО тот пайплайн, который тир считает
+    # «покрывающим» — раньше need вычитал весь пайплайн безусловно, и при
+    # изменении констант ETA/буфера формула разъехалась бы с тиром молча.
+    return tier, cover_months, cover_months_full, covered_pipeline
 
 
 # 08.08 — 8 SKU в T1/T2 с пустым "Название" в файле экспорта (не баг парсера
@@ -2291,14 +2348,61 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         near_pipeline = st.get("ymc_transit") or 0
         far_pipeline = st.get("ordered") or 0
 
-        tier, cover_months, cover_months_full = _procurement_classify_v2(
-            mvel_retail, kaspi_stock, near_pipeline, far_pipeline)
+        # ── Ф3 (11.08, Закуп v3): сезонная модель спроса ─────────────────
+        # Спрос для тира и целевого объёма = десезонализированный уровень ×
+        # сезонный индекс окна ПРИБЫТИЯ товара. Товар, заказанный сегодня,
+        # приезжает через LEAD_TIME_DAYS (~45д) и продаётся следующие
+        # TARGET_COVER_DAYS (~60д) — значит правильный множитель берётся не
+        # из текущего месяца, а из окна t+45..t+105 дней ≈ календарные
+        # месяцы cur+2..cur+4 (cur_month — последний ЗАВЕРШЁННЫЙ месяц,
+        # «сегодня» — начало cur+1). Именно это делает возможным довес ДО
+        # пика: в феврале трейлинг-скорость фризеров зимняя, но окно
+        # прибытия — апрель-июнь, и тир/объём считаются уже под них.
+        # Уровень чистится от сезона трейлинг-месяцев (qty / индекс месяца,
+        # индекс зажат в _DESEASON_CLAMP), иначе «низкий сезон в знаменателе»
+        # занижал бы базу ровно перед пиком, а пиковые месяцы — завышали
+        # после него. Если сезонность категории не посчиталась (нет 6
+        # месяцев истории) или окно прибытия известно меньше чем на 2 месяца
+        # — factor = 1.0, уровень = сырой mvel, поведение в точности
+        # прежнее. Модель включается сама по мере появления данных — та же
+        # философия, что у data_quality guard.
+        cur_month = months_used[-1][1] if months_used else None
+        cat_season = seasonality.get(d["category"])
+
+        season_level = mvel_retail
+        season_factor = 1.0
+        arrival_idx = None
+        if cat_season and cur_month:
+            deseason_terms = []
+            for (_yy, _mm), _qty in d["retail_by_month"].items():
+                s = cat_season.get(_mm)
+                if s is None:
+                    deseason_terms.append(_qty)
+                else:
+                    s_cl = min(max(s, _DESEASON_CLAMP_LOW), _DESEASON_CLAMP_HIGH)
+                    deseason_terms.append(_qty / s_cl)
+            if deseason_terms:
+                # месяцы без продаж отсутствуют в retail_by_month — делим на
+                # n_months, как и sum/n_months у сырого mvel_retail
+                season_level = sum(deseason_terms) / n_months
+            win = []
+            for i in (2, 3, 4):
+                m = ((cur_month - 1 + i) % 12) + 1
+                v = cat_season.get(m)
+                if v is not None:
+                    win.append(v)
+            if len(win) >= 2:
+                arrival_idx = round(sum(win) / len(win), 2)
+                season_factor = min(max(arrival_idx, SEASON_FACTOR_CAP_LOW), SEASON_FACTOR_CAP_HIGH)
+
+        mvel_effective = round(season_level * season_factor, 2)
+
+        tier, cover_months, cover_months_full, covered_pipeline = _procurement_classify_v2(
+            mvel_effective, kaspi_stock, near_pipeline, far_pipeline)
 
         season_note = None
         season_conflict = False
         season_suppressed = False
-        cur_month = months_used[-1][1] if months_used else None
-        cat_season = seasonality.get(d["category"])
         if cat_season and cur_month:
             idx = cat_season.get(cur_month)
             if idx is not None:
@@ -2332,12 +2436,22 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
                     # — то есть сезон не просто низкий сейчас, а не
                     # собирается расти в горизонте лид-тайма+буфера закупа.
                     outlook = idx
+                    window_complete = True
                     for i in range(1, 4):
                         m = ((cur_month - 1 + i) % 12) + 1
                         v = cat_season.get(m)
-                        if v is not None:
+                        if v is None:
+                            # Ф1 (11.08): месяц вне покрытия файла = «не
+                            # знаем», а не «ноль». Обнулять закуп на
+                            # неполном окне нельзя — ложное подавление
+                            # стоит потерянных продаж в сезон, а ложное
+                            # НЕподавление — лишь временно замороженных
+                            # денег. Подавляем только при полностью
+                            # известном окне.
+                            window_complete = False
+                        else:
                             outlook = max(outlook, v)
-                    if outlook < 0.4:
+                    if outlook < 0.4 and window_complete:
                         season_suppressed = True
 
         if season_suppressed:
@@ -2355,9 +2469,20 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             # сигнал спроса, а не как "купи ровно столько".
             tier = "T2M_MADE_TO_ORDER"
 
-        target_units = (TARGET_COVER_DAYS / 30.0) * mvel_retail
-        need = target_units - kaspi_stock - near_pipeline - far_pipeline
+        # Целевой объём — по ЭФФЕКТИВНОЙ скорости (уровень × сезон окна
+        # прибытия); вычитаем ровно «покрывающий» пайплайн из тира (Ф1).
+        target_units = (TARGET_COVER_DAYS / 30.0) * mvel_effective
+        need = target_units - kaspi_stock - covered_pipeline
         suggest_qty = max(0, math.ceil(need)) if tier in ("T1_CRITICAL", "T2_PIPELINE") else 0
+
+        # Сезонный довес отдельным числом (решение Дамира 11.08: довес
+        # виден отдельной колонкой, финальное слово за закупщиком):
+        # сколько штук добавила/убрала сезонная модель против плоской
+        # математики при том же тире.
+        _baseline_target = (TARGET_COVER_DAYS / 30.0) * mvel_retail
+        _baseline_need = _baseline_target - kaspi_stock - covered_pipeline
+        _baseline_qty = max(0, math.ceil(_baseline_need)) if tier in ("T1_CRITICAL", "T2_PIPELINE") else 0
+        season_uplift_units = suggest_qty - _baseline_qty
 
         wholesale_orders = sorted(d["wholesale_orders"], key=lambda o: o["date"])[-5:]
         wholesale_total = sum(o["qty"] for o in d["wholesale_orders"])
@@ -2413,6 +2538,13 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             "sku": sku, "name": resolved_name, "category": d["category"], "subgroup": d["subgroup"],
             "status": st.get("status"),
             "mvel_retail": round(mvel_retail, 2),
+            "mvel_effective": mvel_effective,
+            "season_model": ({
+                "level": round(season_level, 2),
+                "arrival_index": arrival_idx,
+                "factor": round(season_factor, 2),
+                "uplift_units": season_uplift_units,
+            } if arrival_idx is not None else None),
             "mvel_retail_by_city": mvel_retail_by_city,
             "by_city_stock": by_city_stock,
             "kaspi_stock": kaspi_stock,
