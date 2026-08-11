@@ -1079,6 +1079,16 @@ textarea.inp::placeholder{color:var(--muted)}
             </table>
           </div>
         </div>
+        <div class="sec" id="zk-lost-wrap" style="display:none;border:1px solid rgba(248,81,73,.35)">
+          <div class="sh"><span class="st"><i class="ti ti-eye-off" style="color:var(--red)"></i> Пропавшие с Kaspi листинги наших брендов</span></div>
+          <p style="font-size:11px;color:var(--muted);padding:12px 20px 0;margin:0">Листинг был в предыдущем месяце Kaspi-матрицы и исчез в последнем. Исчезновение = слетела карточка ИЛИ ноль на всех 3 видимых Kaspi складах. Сопоставление с карточкой CRM (мост SKU↔kod) подсказывает, какой из двух случаев: если сток есть — чинится за минуты восстановлением листинга.</p>
+          <div style="overflow-x:auto">
+            <table class="tbl" id="zk-lost-t">
+              <thead><tr><th>kod</th><th>Название</th><th>Бренд</th><th>Отдел</th><th style="text-align:right">Прод. в пред. мес</th><th style="text-align:right">₸ в пред. мес</th><th style="text-align:right">Сток CRM</th><th>Диагноз</th></tr></thead>
+              <tbody id="zk-lost-body"></tbody>
+            </table>
+          </div>
+        </div>
         <div class="sec" id="zk-nostock-wrap" style="display:none">
           <div class="sh"><span class="st"><i class="ti ti-help-circle" style="color:var(--muted)"></i> Продаются, но нет в выгрузке остатков</span></div>
           <div style="overflow-x:auto">
@@ -3506,6 +3516,31 @@ async function renderZakup(){
         pill('core','Ядро','var(--ice)') +
         pill('core+extended','Ядро + Расширенный','var(--blue)') +
         pill('all','Показать всё (с хвостом)','var(--muted)');
+    }
+
+    // Ф2 Закуп v3 (11.08) — пропавшие с Kaspi листинги наших брендов.
+    const lost=proc.kaspi_lost_listings||[];
+    const lostWrap=g('zk-lost-wrap');
+    if(lostWrap){
+      if(lost.length){
+        lostWrap.style.display='';
+        g('zk-lost-body').innerHTML=lost.map(x=>{
+          const hasStock=(x.crm_stock||0)>0;
+          const links=(x.crm_links||[]).map(l=>`${l.sku} (${l.confidence})`).join(', ');
+          return `<tr>
+            <td style="font-family:monospace;font-size:12px;color:var(--muted)">${x.kod}</td>
+            <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(String(x.name||''))}">${x.name||'—'}</td>
+            <td>${x.brand||'—'}</td>
+            <td style="color:var(--muted);font-size:12px">${x.department||'—'}</td>
+            <td style="text-align:right">${fmtN(x.prev_units)}</td>
+            <td style="text-align:right;font-weight:700;color:var(--red)">${fmtR(x.prev_revenue)}</td>
+            <td style="text-align:right;font-weight:700;color:${hasStock?'var(--green)':'var(--muted)'}" title="${links?'CRM: '+links:'мост не нашёл карточку CRM'}">${x.crm_links&&x.crm_links.length?fmtN(x.crm_stock):'?'}</td>
+            <td style="font-size:11.5px;color:${hasStock?'var(--green)':'var(--yellow)'};max-width:300px">${x.verdict}</td>
+          </tr>`;
+        }).join('');
+      } else {
+        lostWrap.style.display='none';
+      }
     }
 
     const noStock=proc.no_stock_data||[];

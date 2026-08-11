@@ -502,14 +502,18 @@ async def get_procurement_v2(db: AsyncSession = Depends(get_db)):
             "note": "Нужны обе загрузки — «Остатки» и «Продажи всех каналов» — см. вкладку «Закуп».",
         }
 
-    # Kaspi-строки ВСЕХ 4 отделов сайта — не для тира, только для сверки
-    # site-Kaspi vs Kaspi-канал нового файла (kaspi_divergence в engine).
+    # Kaspi-строки ВСЕХ 4 отделов сайта: (а) алерт «пропавшие листинги»
+    # наших брендов через мост SKU↔kod (Ф2 Закуп v3, 11.08), (б) задел под
+    # сверку site-Kaspi vs Kaspi-канал файла (kaspi_divergence — пока
+    # отключена, см. engine).
     all_kaspi_rows: list[dict] = []
     for dept in DeptEnum:
         all_kaspi_rows.extend(await _fetch_rows(db, dept.value, month=None, subtype=None))
+    our_brands = await _get_our_brands(db)
 
     result = engine.calc_procurement_v2(rows=all_kaspi_rows, stock_rows=stock_rows,
-                                         channel_rows=channel_rows, scope_categories=None)
+                                         channel_rows=channel_rows, scope_categories=None,
+                                         our_brands=our_brands)
 
     active_t1_categories = {it["category"] for it in result["items"] if it["tier"] == "T1_CRITICAL"}
     scope = engine.calc_category_scope(channel_rows, core_categories=set(CORE_CRM_CATEGORIES),

@@ -2137,8 +2137,126 @@ MANUAL_NAME_OVERRIDES = {
 }
 
 
+def calc_kaspi_lost_listings(rows: list[dict], stock_by_sku: dict,
+                              crm_catalog: dict, our_brands: set) -> tuple[list, dict]:
+    """
+    Ф2 Закуп v3 (11.08) — «пропавшие листинги»: наши kod'ы, которые были в
+    предыдущем месяце Kaspi-матрицы отдела и исчезли в последнем. Ровно так
+    11.08 вручную нашлись 6 SKU на ~10 млн ₸/мес (Leadbros 9300023, XINGX
+    XF-850, Friggier LD-998/SD-730B, XINGX SD/SC103B, AOLIEGE BC/BD 801) —
+    теперь проверка автоматическая при каждом расчёте закупа.
+
+    Исчезновение из выгрузки Kaspi = либо слетела карточка, либо ноль на
+    всех 3 видимых Kaspi складах. Мост SKU↔kod (sku_bridge) позволяет
+    различить: если по сопоставленной карточке CRM сток ЕСТЬ — проблема в
+    листинге, это самый дорогой и самый быстрый в починке случай.
+
+    Месяцы сравниваются ВНУТРИ отдела (форматы разные: «Июль 2026» у
+    морозильников, «Июль» у витрин). Год-less месяцы сортируются по номеру
+    месяца — на стыке годов (Дек→Янв) сравнение станет неверным, к этому
+    моменту в выгрузках должен появиться год (см. known_gaps).
+
+    Возвращает (список пропавших, статистика моста).
+    """
+    from app.analytics.sku_bridge import build_bridge
+
+    if not rows or not our_brands:
+        return [], {}
+    ob = {str(b).strip().upper() for b in our_brands}
+
+    def _mkey(mstr):
+        parts = str(mstr or "").strip().split()
+        if not parts:
+            return None
+        w = parts[0].lower()
+        idx = _MONTH_IDX.get(w, _MONTH_IDX.get(w[:3]))
+        if idx is None:
+            return None
+        year = 0
+        if len(parts) > 1 and parts[1].isdigit():
+            year = int(parts[1])
+        return (year, idx)
+
+    # Мост строится один раз на все отделы.
+    kaspi_seen: dict[str, dict] = {}
+    for r in rows:
+        kod = str(r.get("kod") or "").strip()
+        if kod and kod not in kaspi_seen:
+            kaspi_seen[kod] = {"kod": kod, "name": r.get("name"), "brand": r.get("brand")}
+    bridge = build_bridge(
+        [{"sku": s, "name": n} for s, n in crm_catalog.items()],
+        list(kaspi_seen.values()), brand_family=ob)
+
+    by_dept: dict[str, list] = defaultdict(list)
+    for r in rows:
+        by_dept[r.get("department") or ""].append(r)
+
+    lost = []
+    for dept, drows in by_dept.items():
+        month_keys = {}
+        for r in drows:
+            mk = _mkey(r.get("month"))
+            if mk:
+                month_keys.setdefault(mk, r.get("month"))
+        if len(month_keys) < 2:
+            continue
+        ordered = sorted(month_keys)
+        last_k, prev_k = ordered[-1], ordered[-2]
+        last_label, prev_label = month_keys[last_k], month_keys[prev_k]
+
+        prev_by_kod: dict[str, dict] = {}
+        last_kods: set = set()
+        for r in drows:
+            mk = _mkey(r.get("month"))
+            kod = str(r.get("kod") or "").strip()
+            if not kod or not mk:
+                continue
+            if mk == last_k:
+                last_kods.add(kod)
+            elif mk == prev_k:
+                e = prev_by_kod.setdefault(kod, {"units": 0.0, "revenue": 0.0, "r": r})
+                e["units"] += r.get("units") or 0
+                e["revenue"] += r.get("revenue") or 0
+
+        for kod, e in prev_by_kod.items():
+            r = e["r"]
+            if (str(r.get("brand") or "").strip().upper() not in ob
+                    or e["units"] <= 0 or kod in last_kods):
+                continue
+            links = bridge["kod_to_skus"].get(kod) or []
+            crm_stock = crm_pipe = 0.0
+            linked_skus = []
+            for l in links:
+                st = stock_by_sku.get(str(l["sku"]).strip().upper())
+                if st:
+                    crm_stock += (st.get("wh_pervomay") or 0) + (st.get("wh_astana") or 0) + (st.get("wh_shymkent") or 0)
+                    crm_pipe += (st.get("ymc_transit") or 0) + (st.get("ordered") or 0)
+                linked_skus.append({"sku": l["sku"], "confidence": l["confidence"]})
+            if not links:
+                verdict = "не сопоставлен с CRM — проверить вручную (мост не нашёл карточку)"
+            elif crm_stock > 0:
+                verdict = ("товар на складе ЕСТЬ — похоже, слетел сам листинг: "
+                           "проверить карточку на Kaspi, это самая быстрая починка")
+            elif crm_pipe > 0:
+                verdict = "стока нет, но товар в пути/заказан — вернуть листинг к приходу"
+            else:
+                verdict = "стока нет и не заказано — потерян и товар, и листинг"
+            lost.append({
+                "kod": kod, "name": r.get("name"), "brand": r.get("brand"),
+                "department": dept,
+                "prev_month": prev_label, "last_month": last_label,
+                "prev_units": round(e["units"], 1), "prev_revenue": round(e["revenue"], 0),
+                "crm_links": linked_skus, "crm_stock": round(crm_stock, 1),
+                "crm_pipeline": round(crm_pipe, 1), "verdict": verdict,
+            })
+
+    lost.sort(key=lambda x: -x["prev_revenue"])
+    return lost, bridge["stats"]
+
+
 def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: list[dict],
-                         scope_categories: Optional[set] = None) -> dict:
+                         scope_categories: Optional[set] = None,
+                         our_brands: Optional[set] = None) -> dict:
     """
     rows: продажи Kaspi этого отдела из KaspiRow (после apply_business_rules)
           — используются ТОЛЬКО для сверки с Kaspi-каналом нового файла
@@ -2297,6 +2415,22 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         k = str(s.get("sku") or "").strip().upper()
         if k:
             stock_by_sku[k] = s
+
+    # ── Ф2 (11.08): пропавшие с Kaspi листинги наших брендов ─────────────
+    # Каталог CRM для моста: имена из остатков + имена из файла продаж
+    # (остатки — основной источник, продажи добирают SKU без строки стока).
+    _crm_catalog: dict[str, str] = {}
+    for s in stock_rows:
+        _sk = str(s.get("sku") or "").strip()
+        _nm = str(s.get("name") or "").strip()
+        if _sk and _nm:
+            _crm_catalog[_sk] = _nm
+    for r in channel_rows:
+        _sk = str(r.get("sku") or "").strip()
+        if _sk and _sk not in _crm_catalog and r.get("name"):
+            _crm_catalog[_sk] = str(r.get("name")).strip()
+    kaspi_lost_listings, sku_bridge_stats = calc_kaspi_lost_listings(
+        rows, stock_by_sku, _crm_catalog, our_brands or set())
 
     # 08.08 — «под заказ» категории определяются ЗАРАНЕЕ, отдельным проходом,
     # ДО расчёта тира/suggest_qty (не после, как было). Раньше
@@ -2738,6 +2872,8 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         "city_sales_totals": city_sales_totals,
         "city_transfers": city_transfers,
         "purchase_split_totals": purchase_split_totals,
+        "kaspi_lost_listings": kaspi_lost_listings,
+        "sku_bridge_stats": sku_bridge_stats,
         "data_quality": data_quality,
         "months_used": sorted(months_used_labels, key=_month_sort_key),
         "counts": {t: sum(1 for it in items if it["tier"] == t) for t in TIER_ORDER},
