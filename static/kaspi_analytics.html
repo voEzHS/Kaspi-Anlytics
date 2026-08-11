@@ -1068,6 +1068,7 @@ textarea.inp::placeholder{color:var(--muted)}
               <thead><tr>
                 <th>Тир</th><th>Артикул</th><th>Название</th><th>Категория</th><th>Охват</th>
                 <th style="text-align:right">Прод./мес (розница)</th>
+                <th style="text-align:right" title="Сезонная модель: десезонализированный уровень спроса × индекс сезона на окно прибытия товара (t+45..t+105 дней). Довес ограничен +50%, срез — не ниже половины. Пусто = сезонности по категории нет, расчёт по обычной скорости.">Сезон</th>
                 <th style="text-align:right">Сток</th>
                 <th style="text-align:right">В пути</th>
                 <th style="text-align:right">Покрытие, мес</th>
@@ -3652,6 +3653,13 @@ function renderZkTable(){
       <td style="color:var(--muted);font-size:12px" title="${it.subgroup||''}">${it.category||'—'}</td>
       <td>${scopeBadge}</td>
       <td style="text-align:right">${it.mvel_retail}</td>
+      <td style="text-align:right">${(()=>{
+          const sm=it.season_model; if(!sm) return '<span style="color:var(--muted)">—</span>';
+          const up=sm.uplift_units||0;
+          const col = sm.factor>1.02 ? 'var(--green)' : (sm.factor<0.98 ? 'var(--yellow)' : 'var(--muted)');
+          const upTxt = up!==0 ? `<div style="font-size:10px;color:${col};white-space:nowrap">${up>0?'+':''}${fmtN(up)} шт</div>` : '';
+          return `<span style="color:${col};font-weight:600" title="Уровень спроса (без сезона): ${sm.level}/мес · индекс окна прибытия: ×${sm.arrival_index} · применён фактор ×${sm.factor} → эффективная скорость ${it.mvel_effective}/мес. Довес/срез к «Купить»: ${up>0?'+':''}${up} шт — финальное решение за закупщиком.">×${sm.factor}</span>${upTxt}`;
+        })()}</td>
       <td style="text-align:right" title="${wpTitle}">${fmtN(it.kaspi_stock)}${wp?` <i class="ti ti-building-warehouse" style="font-size:10px;color:var(--muted)"></i>`:''}</td>
       <td style="text-align:right;color:var(--muted)" title="${pipeTitle}">${fmtN((it.near_pipeline||0)+(it.far_pipeline||0))}</td>
       <td style="text-align:right">${it.cover_months!=null?it.cover_months:'—'}</td>
@@ -3664,7 +3672,7 @@ function renderZkTable(){
         })()}</td>
       <td style="text-align:right;font-weight:700;color:${it.revenue_potential>0?'var(--green)':'var(--muted)'}" title="${it.price?`Цена в CRM: ${fmtR(it.price)}`:'Цены в CRM нет — потенциал не посчитан, ниже в списке незаслуженно'}">${it.revenue_potential>0?fmtR(it.revenue_potential):'—'}</td>
     </tr>`;
-  }).join('') : `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--muted)">Нет позиций в этом охвате</td></tr>`;
+  }).join('') : `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--muted)">Нет позиций в этом охвате</td></tr>`;
 }
 
 // ── SETTINGS ──
