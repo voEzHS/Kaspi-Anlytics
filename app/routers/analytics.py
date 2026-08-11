@@ -522,6 +522,20 @@ async def get_procurement_v2(db: AsyncSession = Depends(get_db)):
         it["scope"] = scope["scope_by_category"].get(it["category"], "tail")
         it["department"] = CORE_CRM_CATEGORIES.get(it["category"])
 
+    # 12.08 (вопрос Дамира «почему рисоварка выше морозильника»): финальный
+    # порядок — тир → ПРОФИЛЬНЫЙ бизнес выше сопутствующего (core →
+    # extended → tail; доля рынка делается в 4 отделах сайта, мелочь не
+    # должна заслонять ядро) → защищаемый бизнес ₸/мес → размер покупки.
+    # Пересортировка здесь, а не в engine, потому что scope известен
+    # только после calc_category_scope.
+    _SCOPE_RANK = {"core": 0, "extended": 1, "tail": 2}
+    result["items"].sort(key=lambda it: (
+        engine.PROC_TIER_ORDER.get(it["tier"], 9),
+        _SCOPE_RANK.get(it.get("scope"), 9),
+        -engine.procurement_sort_value(it),
+        -(it.get("suggest_qty") or 0),
+    ))
+
     result["scope"] = scope
     result["channel_loaded"] = True
     result["stock_loaded"] = True

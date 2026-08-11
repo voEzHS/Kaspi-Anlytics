@@ -2089,6 +2089,32 @@ SEASONAL_FALLBACK_OFF_MONTHS: dict[str, set] = {
     "Фризеры для мороженого": {9, 10, 11, 12, 1, 2},
 }
 
+# ── Порядок тиров и ценность позиции (12.08) ──────────────────────────────
+PROC_TIER_ORDER = {"T1_CRITICAL": 0, "T2_PIPELINE": 1, "T2S_SEASON_OFF": 2,
+                   "T2M_MADE_TO_ORDER": 3, "T2X_STOP": 4, "T3A_LISTING": 5,
+                   "T3B_LOWPRI": 6, "T4_OK": 7}
+
+
+def procurement_sort_value(it: dict) -> float:
+    """
+    Ценность позиции для сортировки = ЗАЩИЩАЕМЫЙ БИЗНЕС, ₸/мес
+    (цена × эффективная скорость продаж), усиленный ростом рынка ветки.
+
+    Редизайн 12.08, вопрос Дамира «по какому принципу рисоварка стоит
+    вверху, если приносит копейки»: прежний критерий revenue_potential =
+    цена × Купить мерил размер ПОКУПКИ, а не размер бизнеса. Морозильник
+    ядрового отдела (бизнес 611 тыс ₸/мес), которому нужна 1 штука
+    доливки, проигрывал рисоварке за 27.8 тыс (бизнес 334 тыс/мес),
+    которой нужно 14 штук. Теперь решает, какой месячный оборот позиция
+    защищает — сколько штук докупаем, вопрос логистики, а не приоритета.
+    Когда появится себестоимость — заменить выручку на маржу.
+    """
+    base = it.get("monthly_value") or 0
+    m = it.get("market")
+    if base > 0 and m and (m.get("vetka_trend_pct") or 0) > 0:
+        return base * (1 + min(m["vetka_trend_pct"], 50) / 100.0)
+    return base
+
 
 def _procurement_classify_v2(mvel_retail, kaspi_stock, near_pipeline, far_pipeline,
                               recent_ok: bool = True):
@@ -2859,6 +2885,7 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
             "cover_months": cover_months, "cover_months_full": cover_months_full,
             "tier": tier, "suggest_qty": suggest_qty,
             "price": round(price, 0), "revenue_potential": revenue_potential,
+            "monthly_value": round(price * mvel_effective, 0),
             "season_note": season_note, "season_conflict": season_conflict,
             "season_suppress_src": season_suppress_src,
             "stale_demand": stale_demand,
@@ -3034,22 +3061,16 @@ def calc_procurement_v2(rows: list[dict], stock_rows: list[dict], channel_rows: 
         for it in group:
             it["possible_duplicate_skus"] = [s for s in skus if s != it["sku"]]
 
-    TIER_ORDER = {"T1_CRITICAL": 0, "T2_PIPELINE": 1, "T2S_SEASON_OFF": 2, "T2M_MADE_TO_ORDER": 3,
-                  "T2X_STOP": 4, "T3A_LISTING": 5, "T3B_LOWPRI": 6, "T4_OK": 7}
-    # Сортировка внутри тира — по ₸-потенциалу (цена × Купить), не по штукам.
-    # C3 (11.08): потенциал усиливается ростом рынка ветки — то же вложение
-    # в растущем сегменте покупает больше доли (сегмент ларей +46%/мес — мы
-    # его пропустили ровно потому, что закуп не видел рынок). Буст капится
-    # +50%, только вверх (падающий рынок НЕ топит позицию — риск дефицита
-    # от этого не исчезает), только при известном тренде. Прозрачность: сам
-    # тир не меняется, буст виден в item.market.vetka_trend_pct.
-    def _sort_value(it):
-        base = it["revenue_potential"]
-        m = it.get("market")
-        if base > 0 and m and (m.get("vetka_trend_pct") or 0) > 0:
-            return base * (1 + min(m["vetka_trend_pct"], 50) / 100.0)
-        return base
-    items.sort(key=lambda it: (TIER_ORDER.get(it["tier"], 9), -_sort_value(it),
+    TIER_ORDER = PROC_TIER_ORDER
+    # Сортировка внутри тира — по ЗАЩИЩАЕМОМУ БИЗНЕСУ ₸/мес (см.
+    # procurement_sort_value, редизайн 12.08 по вопросу Дамира про
+    # рисоварку): размер покупки (цена × Купить) больше не решает порядок —
+    # он мерил трату, а не бизнес. Рыночный буст растущей ветки сохранён
+    # (+50% кап). Роутер после присвоения scope пересортирует ещё раз,
+    # подняв профильные отделы (core) над сопутствующими (extended/tail)
+    # внутри каждого тира — здесь scope ещё неизвестен.
+    items.sort(key=lambda it: (TIER_ORDER.get(it["tier"], 9),
+                                -procurement_sort_value(it),
                                 -it["suggest_qty"], -it["mvel_retail"]))
 
     return {
