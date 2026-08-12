@@ -6,7 +6,8 @@ from sqlalchemy import select, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.models import DeptEnum, KaspiRow, StockRow, ChannelSalesRow
+from app.models.models import (DeptEnum, KaspiRow, StockRow, ChannelSalesRow,
+                                StockUpload, ChannelSalesUpload)
 from app.analytics import engine
 # "Our brands" logic lives in one place — app/routers/settings.py — and is
 # imported here rather than duplicated, so it can't silently drift out of
@@ -535,6 +536,36 @@ async def get_procurement_v2(db: AsyncSession = Depends(get_db)):
         -engine.procurement_sort_value(it),
         -(it.get("suggest_qty") or 0),
     ))
+
+    # 12.08, гибридная модель (решения о закупе строятся в чате, сайт —
+    # данные/гейты/мониторы): возраст снимков — часть data_quality. Остатки
+    # НЕ накопительные: недельный снимок = каждый сток и пайплайн в плане
+    # недельной давности. Ритм согласован с Дамиром: остатки — каждый
+    # понедельник, план закупа — каждые 2 недели поверх свежего снимка
+    # (см. ZAKUP_CHAT_LOGIC.md).
+    from datetime import datetime, timezone
+    _now = datetime.now(timezone.utc).replace(tzinfo=None)
+    _su = (await db.execute(select(StockUpload).order_by(StockUpload.created_at.desc()))
+           ).scalars().first()
+    _cu = (await db.execute(select(ChannelSalesUpload).order_by(ChannelSalesUpload.created_at.desc()))
+           ).scalars().first()
+    dq = result.get("data_quality") or {}
+    if _su and _su.created_at:
+        _age = (_now - _su.created_at).days
+        dq["stock_age_days"] = _age
+        if _age > 7:
+            dq.setdefault("warnings", []).append(
+                f"Снимку остатков {_age} дн. (загружен {_su.created_at.date().isoformat()}) — "
+                "стоки и пайплайн устарели. Перед решением о закупе перезалить экспорт "
+                "остатков из CRM (ритм: каждый понедельник).")
+    if _cu and _cu.created_at:
+        _agec = (_now - _cu.created_at).days
+        dq["channel_age_days"] = _agec
+        if _agec > 14:
+            dq.setdefault("warnings", []).append(
+                f"Файлу продаж по каналам {_agec} дн. — скорость продаж считается по "
+                "устаревшему окну, перезалить перед планом закупа.")
+    result["data_quality"] = dq
 
     result["scope"] = scope
     result["channel_loaded"] = True
