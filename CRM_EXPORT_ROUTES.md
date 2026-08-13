@@ -164,3 +164,91 @@ drp.setEndDate('08/12/2026');   // 0 сетевых запросов
 При 3 секундах между запросами это ~15 секунд ожидания. Блуждание по
 интерфейсу стоило бы 20-30 запросов и полторы минуты — и это в лучшем случае,
 без риска выглядеть как перебор.
+
+---
+
+# КОНВЕЙЕР БЕЗ ФАЙЛОВ (снято 12.08.2026)
+
+Файл — источник всех проблем: падает в Downloads, куда ассистент не имеет
+доступа, и требует ручного шага каждую неделю. Решение — не создавать файл.
+
+## Сигнатура экспорта остатков — ОДИН запрос вместо пяти
+
+Кнопка «Экспортировать» под капотом шлёт ровно это:
+
+```
+POST https://torgstore.zymyran.com/service/warehouse/products/print-products-dimension
+Content-Type: multipart/form-data
+```
+
+| Поле | Значение |
+|---|---|
+| `smart` | `` (пусто) |
+| `warehouse_id` | `all` |
+| `category_id` | `0` |
+| `status_id` | `any` |
+| `quantity` | `all` |
+| `progress` | `all` |
+| `brand_id` | `0` |
+| `supplier_id` | `any` |
+| `missing_data` | `any` |
+| `config_type` | `any` |
+| `promotion` | `Все товары` |
+| `include_dimensions` | `1` |
+| `include_volume` | `1` |
+| `include_mas` | `1` |
+| `include_supplier_id` | `1` |
+| `include_kaspi_reviews` | `1` |
+| `include_links` | `1` |
+| **`include_moving`** | **`0`** ← при `1` форма молча не отправляется (требует склад откуда/куда) |
+
+Никаких кликов по меню, галочек и модалок. Один `fetch` — и blob в памяти.
+
+```js
+const fd = new FormData();
+Object.entries({smart:'',warehouse_id:'all',category_id:'0',status_id:'any',
+  quantity:'all',progress:'all',brand_id:'0',supplier_id:'any',missing_data:'any',
+  config_type:'any',promotion:'Все товары',include_dimensions:'1',include_volume:'1',
+  include_mas:'1',include_supplier_id:'1',include_kaspi_reviews:'1',
+  include_links:'1',include_moving:'0'}).forEach(([k,v])=>fd.append(k,v));
+await window.__crmThrottle();                    // правило 3 секунд
+const blob = await fetch('/service/warehouse/products/print-products-dimension',
+                         {method:'POST', body:fd}).then(r=>r.blob());
+// генерация ~90 секунд на 3781 позицию
+```
+
+## Как снимать сигнатуру для других экспортов
+
+Guard уже обёрнут вокруг `fetch` и `XHR`. Достаточно дописать в него запись
+URL и тела перед отправкой (`__crm_req_log` в localStorage), один раз нажать
+кнопку в интерфейсе — и сигнатура снята навсегда. Так же снимается экспорт
+продаж по каналам (ещё не сделано).
+
+## Отправка на наш бэкенд
+
+```
+POST https://kaspi-analytics.onrender.com/api/v1/stock/
+  multipart/form-data + заголовок x-admin-token
+POST /api/v1/channel-sales/   — то же для продаж
+```
+
+Это НЕ домен CRM, правило 3 секунд не применяется.
+
+## ⚠️ Блокер: CORS
+
+Со страницы `torgstore.zymyran.com` запрос к нашему бэкенду сейчас
+отклоняется. CORS задаётся переменной окружения — **кода менять не нужно**:
+
+```
+ALLOWED_ORIGINS += https://torgstore.zymyran.com
+```
+
+`allow_credentials=False`, поэтому куки cross-origin не передаются: страница CRM
+не может выдать себя за нас, токен придётся предъявить явно.
+
+**Риск, который надо понимать:** скрипт, работающий на странице CRM, держит наш
+`x-admin-token` в своём контексте на время прогона. Если на домене CRM
+когда-нибудь окажется вредоносный скрипт, он сможет этот токен перехватить.
+Снижается отдельным токеном только на приём данных (`stock`, `channel-sales`),
+без прав на остальное — тогда утечка стоит максимум мусорной загрузки, которую
+ловит санитарный контроль.
