@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.models import ChannelSalesRow, ChannelSalesUpload
-from app.routers.uploads import require_admin, MAX_UPLOAD_BYTES
+from app.routers.uploads import require_admin, require_admin_or_ingest, MAX_UPLOAD_BYTES
 
 router = APIRouter(prefix="/api/v1/channel-sales", tags=["channel-sales"])
 
@@ -155,7 +155,7 @@ def parse_channel_sales_excel(filepath: str) -> list[dict]:
 async def upload_channel_sales(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_admin),
+    _: None = Depends(require_admin_or_ingest),
 ):
     content = await file.read()
     if len(content) > MAX_UPLOAD_BYTES:

@@ -252,3 +252,62 @@ ALLOWED_ORIGINS += https://torgstore.zymyran.com
 Снижается отдельным токеном только на приём данных (`stock`, `channel-sales`),
 без прав на остальное — тогда утечка стоит максимум мусорной загрузки, которую
 ловит санитарный контроль.
+
+---
+
+# INGEST-ТОКЕН — что сделано в бэкенде (12.08.2026)
+
+Чтобы конвейер CRM → сайт работал, нужно было снять два барьера. Оба сняты
+узко, без ослабления общей защиты.
+
+## Барьер 1 · Basic Auth резал всё
+
+Входная дверь пропускала только `/health` и `POST /api/v1/uploads/`. Запрос со
+страницы `torgstore.zymyran.com` получал 401 ещё до маршрута: куки cross-origin
+не уходят (`allow_credentials=False`), Basic-Auth-заголовка у той страницы нет.
+
+**Решение — калитка в `basic_auth_middleware` (app/main.py):** пропускает
+запрос, только если одновременно выполнено всё:
+
+* метод `POST`;
+* путь ровно `/api/v1/stock/` или `/api/v1/channel-sales/`;
+* заголовок `x-ingest-token` совпадает с `INGEST_TOKEN` (сравнение через
+  `hmac.compare_digest`, постоянное время).
+
+Плюс отдельно пропускается `OPTIONS` на эти два пути — иначе браузер не
+получит preflight.
+
+## Барьер 2 · Права токена
+
+Новая зависимость `require_admin_or_ingest` (app/routers/uploads.py) стоит
+**только** на двух ручках приёма. `DELETE`, настройки, правки типов и всё
+остальное остались под `require_admin` — ingest-токен туда не пускает.
+
+| Ручка | Гейт | Пускает ingest? |
+|---|---|---|
+| `POST /api/v1/stock/` | `require_admin_or_ingest` | да |
+| `POST /api/v1/channel-sales/` | `require_admin_or_ingest` | да |
+| `DELETE /api/v1/stock/` | `require_admin` | **нет** |
+| `DELETE /api/v1/channel-sales/` | `require_admin` | **нет** |
+| `/api/v1/uploads/*`, настройки | `require_admin` | **нет** |
+
+`INGEST_TOKEN` пуст → калитка закрыта, поведение ровно как до правки.
+
+## Проверено офлайн, 8/8
+
+верный токен пускает · неверный отклонён · токен не передан отклонён ·
+админ-пароль работает как раньше · пропуск от middleware учитывается ·
+**ingest-токен на удаление отклонён** · админ на удаление пускает ·
+при пустом `INGEST_TOKEN` калитка закрыта.
+
+## Что выставить в Render
+
+```
+ALLOWED_ORIGINS = https://kaspi-analytics.onrender.com,https://torgstore.zymyran.com
+INGEST_TOKEN    = <секрет, сгенерировать отдельно от ADMIN_PASSWORD>
+```
+
+Токен генерируется командой `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`.
+**Не переиспользовать `ADMIN_PASSWORD`** — весь смысл разделения в том, что
+при компрометации домена CRM утечёт только право залить снимок, а не право
+удалять данные. Мусорный снимок отсекается санитарным контролем до публикации.

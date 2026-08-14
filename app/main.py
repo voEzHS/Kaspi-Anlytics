@@ -194,6 +194,12 @@ BASIC_AUTH_USERS = _load_basic_auth_users()
 # that cookie instead of depending on the Authorization header being resent,
 # which removes the race entirely rather than exempting more routes one at a
 # time as new ones get hit.
+# Отдельный секрет ТОЛЬКО на приём данных (конвейер CRM → сайт).
+# Не путать с ADMIN_PASSWORD: прав на удаление/правку/настройки не даёт.
+# Пусто = калитка закрыта, работает как раньше (только Basic Auth + админ).
+INGEST_TOKEN = os.getenv("INGEST_TOKEN", "")
+INGEST_PATHS = frozenset({"/api/v1/stock/", "/api/v1/channel-sales/"})
+
 SESSION_COOKIE_NAME = "kaspi_sess"
 SESSION_MAX_AGE_SEC = 60 * 60 * 24  # 24h
 
@@ -243,6 +249,33 @@ async def basic_auth_middleware(request: Request, call_next):
     # the action that was actually broken.
     if request.url.path == "/api/v1/uploads/" and request.method == "POST":
         return await call_next(request)
+
+    # ── Ingest-токен: узкая калитка для автоматической заливки данных ──────
+    # Конвейер CRM → сайт работает со страницы torgstore.zymyran.com, то есть
+    # с чужого origin. Куки туда не уходят (allow_credentials=False), а
+    # Basic-Auth-заголовка у той страницы нет — без этой калитки любой такой
+    # запрос упирался бы в 401 ещё до маршрута.
+    #
+    # Калитка намеренно узкая:
+    #   • только POST, только два пути приёма данных;
+    #   • отдельный секрет INGEST_TOKEN, НЕ пароль администратора;
+    #   • сравнение через hmac.compare_digest (постоянное время);
+    #   • DELETE, настройки, правки и всё остальное сюда не попадают.
+    # Худший исход при утечке токена — мусорная загрузка снимка, которую
+    # ловит санитарный контроль. Прав на удаление или изменение он не даёт.
+    if (
+        INGEST_TOKEN
+        and request.method == "POST"
+        and request.url.path in INGEST_PATHS
+        and hmac.compare_digest(request.headers.get("x-ingest-token", ""), INGEST_TOKEN)
+    ):
+        request.state.ingest_authorized = True
+        return await call_next(request)
+
+    # Preflight к ручкам приёма — пропускаем, ответ формирует CORSMiddleware.
+    if request.method == "OPTIONS" and request.url.path in INGEST_PATHS:
+        return await call_next(request)
+
     if request.url.path == "/health" or not BASIC_AUTH_USERS:
         return await call_next(request)
 

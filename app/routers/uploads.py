@@ -1,5 +1,6 @@
 """Excel upload & parsing router."""
 import glob
+import hmac
 import os
 import re
 from datetime import datetime, timezone
@@ -40,6 +41,34 @@ async def require_admin(request: Request, x_admin_token: Optional[str] = Header(
         return
     if x_admin_token != ADMIN_PASSWORD:
         raise HTTPException(403, "Неверный пароль администратора")
+
+
+INGEST_TOKEN = os.getenv("INGEST_TOKEN", "")
+
+
+async def require_admin_or_ingest(
+    request: Request,
+    x_admin_token: Optional[str] = Header(None),
+    x_ingest_token: Optional[str] = Header(None),
+):
+    """Приём данных: пускает администратора ИЛИ носителя ingest-токена.
+
+    Ставится ТОЛЬКО на две ручки загрузки снимков (остатки и продажи по
+    каналам). Удаление, правки и настройки остаются под require_admin —
+    ingest-токен туда не пускает.
+
+    Смысл разделения: конвейер CRM → сайт исполняется на чужой странице
+    (torgstore.zymyran.com). Держать там полный админ-пароль нельзя — при
+    компрометации того домена он утечёт вместе с правами на удаление
+    данных. Отдельный узкий секрет ограничивает ущерб заливкой мусорного
+    снимка, который отсекается санитарным контролем перед публикацией.
+    """
+    if getattr(request.state, "ingest_authorized", False):
+        return
+    if INGEST_TOKEN and x_ingest_token and hmac.compare_digest(x_ingest_token, INGEST_TOKEN):
+        return
+    await require_admin(request, x_admin_token)
+
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)

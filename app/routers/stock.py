@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.models import StockRow, StockUpload
-from app.routers.uploads import require_admin, MAX_UPLOAD_BYTES
+from app.routers.uploads import require_admin, require_admin_or_ingest, MAX_UPLOAD_BYTES
 
 router = APIRouter(prefix="/api/v1/stock", tags=["stock"])
 
@@ -137,7 +137,7 @@ def parse_stock_excel(filepath: str) -> list[dict]:
 async def upload_stock(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_admin),
+    _: None = Depends(require_admin_or_ingest),
 ):
     content = await file.read()
     if len(content) > MAX_UPLOAD_BYTES:
