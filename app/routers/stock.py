@@ -29,18 +29,63 @@ _COL_SKU = "sku"
 _COL_NAME = "название"
 _COL_STATUS = "статус"
 _COL_PRICE = "цена"
+# ⚠ ТОЧНЫЕ имена, НЕ подстроки. Причина — инцидент 17.08.2026:
+# в выгрузке есть «Дефекты (Хаб Первомай)», «Уценка Астана», «Ремонт Шымкент»,
+# «Шымкент Витрина Уценка» и т.п. При поиске по подстроке каждая следующая
+# такая колонка ПЕРЕЗАПИСЫВАЛА настоящий склад, и в остаток попадал брак вместо
+# товара. По SKU 8300341 вместо 244 шт читалось 3. Ошибка была во всех снимках
+# с самого начала и никак не проявлялась внешне.
 _COL_WH = {
-    "первомай": "wh_pervomay",
-    "астана": "wh_astana",
-    "шымкент": "wh_shymkent",
-    "туздыбастау": "wh_tuzdybastau",
+    "хаб первомай": "wh_pervomay",
+    "склад астана": "wh_astana",
+    "склад шымкент": "wh_shymkent",
+    "склад туздыбастау": "wh_tuzdybastau",
 }
 # "ordered" встречается в латинице внутри заголовка "2_ordered (已订购, заказаны)"
 _ORDERED_HINT = "ordered"
-# Явно НЕ сток — товарные характеристики/непонятные пустые поля, не суммируем
-# никуда (проверено вживую: "Объём" — характеристика товара (литраж), не остаток;
-# "MAS" — всегда пусто в выгрузке).
-_EXCLUDE_HINTS = ("объем", "объём", "mas")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ПОЧЕМУ ЗДЕСЬ БЕЛЫЙ СПИСОК, А НЕ ЧЁРНЫЙ (инцидент 17.08.2026)
+#
+# Раньше логика была «всё, что не опознано — это пайплайн, суммируем».
+# 14.08 в выгрузку добавили колонки габаритов (Вес/Длина/Ширина/Высота/
+# Глубина) — парсер молча сложил сантиметры и килограммы в «товар в пути».
+# Результат: по SKU 9300637 «в пути» стало 2934 шт при реальном нуле, снимок
+# остатков целиком стал негодным, и построенный на нём план закупа на 15,9
+# млн ₸ пришлось отменить. Ни одна проверка этого не поймала, потому что
+# числа выглядели правдоподобно.
+#
+# Теперь наоборот: суммируется ТОЛЬКО то, что опознано как склад или транзит.
+# Незнакомая колонка не портит цифры — она попадает в отчёт unknown_columns,
+# чтобы её заметили и осознанно классифицировали.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Транзит/пайплайн: китайские хабы YMC и статусы производства.
+_TRANSIT_HINTS = (
+    "gs-cai", "dlt-ylh", "gs-xx", "gs-xz", "sk-ylh",   # YMC-подсклады
+    "d-169946", "d-225604", "d-444508", "d-981812",    # прочие YMC-коды
+    "left_factory", "出厂", "ordered", "已订购",
+    "ymc",
+)
+
+# Прочие склады Казахстана — реальный товар, но Kaspi их не видит.
+# Суммируются в ymc_transit как «есть, но не продаётся на Kaspi».
+_OTHER_WH_HINTS = (
+    "витрина", "запчаст", "ремонт", "списан", "дефект", "свх",
+    "возврат", "уценка", "midou", "цех", "магазин", "туздыбастау",
+)
+
+# Явно НЕ сток — характеристики товара и служебные поля. Не суммируем никуда.
+_EXCLUDE_HINTS = (
+    "объем", "объём", "mas",
+    "вес", "длина", "ширина", "высота", "глубина", "габарит",  # ← причина инцидента 17.08
+    "supplier", "поставщик", "отзыв", "ссылк", "link", "url",
+    "рейтинг", "бренд", "категор", "артикул", "фото", "изображ",
+)
+
+# Если «в пути» превышает сток более чем во столько раз при непустом стоке —
+# почти наверняка в транзит попало что-то посторонее (как габариты 17.08).
+_TRANSIT_SANITY_RATIO = 20.0
 
 
 def _norm(s) -> str:
@@ -56,14 +101,14 @@ def _num(v) -> float:
         return 0.0
 
 
-def parse_stock_excel(filepath: str) -> list[dict]:
+def parse_stock_excel(filepath: str) -> tuple[list[dict], dict]:
     wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
     ws = wb[wb.sheetnames[0]]
     rows_raw = list(ws.iter_rows(values_only=True))
     wb.close()
 
     if not rows_raw:
-        return []
+        return [], {"unknown_columns": [], "warnings": ["Файл пустой"]}
 
     # Заголовок почти всегда строка 1, но на всякий случай ищем строку с "sku"
     header_idx = 0
@@ -76,6 +121,7 @@ def parse_stock_excel(filepath: str) -> list[dict]:
     col_sku = col_name = col_status = col_price = col_ordered = None
     col_wh: dict[str, int] = {}
     transit_cols: list[int] = []
+    unknown_cols: list[str] = []
 
     for idx, h in enumerate(headers):
         n = _norm(h)
@@ -89,20 +135,24 @@ def parse_stock_excel(filepath: str) -> list[dict]:
             col_status = idx
         elif _COL_PRICE in n:
             col_price = idx
-        elif any(k in n for k in _COL_WH):
-            for k, field in _COL_WH.items():
-                if k in n:
-                    col_wh[field] = idx
-                    break
-        elif _ORDERED_HINT in n:
+        elif n in _COL_WH:                      # ТОЧНОЕ совпадение, см. комментарий выше
+            col_wh[_COL_WH[n]] = idx
+        elif n.startswith("2_") and _ORDERED_HINT in n:
             col_ordered = idx
         elif any(k in n for k in _EXCLUDE_HINTS):
-            continue  # товарная характеристика — не сток, никуда не суммируем
+            continue  # характеристика товара — не сток, никуда не суммируем
+        elif any(k in n for k in _TRANSIT_HINTS) or any(k in n for k in _OTHER_WH_HINTS):
+            transit_cols.append(idx)          # опознанный транзит / прочий склад
         else:
-            transit_cols.append(idx)
+            unknown_cols.append(str(h).strip())  # НЕ суммируем — только сообщаем
 
     if col_sku is None:
         raise ValueError("Колонка SKU не найдена в файле")
+    if not col_wh:
+        raise ValueError(
+            "Ни одна колонка Kaspi-склада не распознана (ожидались Первомай / "
+            "Астана / Шымкент). Формат выгрузки изменился — снимок не принят."
+        )
 
     result = []
     for row in rows_raw[header_idx + 1:]:
@@ -130,7 +180,41 @@ def parse_stock_excel(filepath: str) -> list[dict]:
             "ymc_transit": transit_sum,
             "ordered": _num(get(col_ordered)),
         })
-    return result
+
+    # ── санитарный контроль снимка ───────────────────────────────────────────
+    warnings: list[str] = []
+    if unknown_cols:
+        warnings.append(
+            "Нераспознанные колонки НЕ учтены в остатках: "
+            + ", ".join(unknown_cols[:12])
+            + (f" (и ещё {len(unknown_cols)-12})" if len(unknown_cols) > 12 else "")
+            + ". Если это склад или транзит — добавьте подсказку в _TRANSIT_HINTS."
+        )
+    tot_stock = sum(r["wh_pervomay"] + r["wh_astana"] + r["wh_shymkent"] for r in result)
+    tot_transit = sum(r["ymc_transit"] for r in result)
+    if tot_stock > 0 and tot_transit > tot_stock * _TRANSIT_SANITY_RATIO:
+        raise ValueError(
+            f"Транзит ({tot_transit:.0f} шт) превышает остаток на Kaspi-складах "
+            f"({tot_stock:.0f} шт) более чем в {_TRANSIT_SANITY_RATIO:.0f} раз. "
+            "Почти наверняка в транзит попала посторонняя колонка (так 17.08.2026 "
+            "туда сложились габариты). Снимок не принят."
+        )
+    frac = [r for r in result if r["ymc_transit"] and abs(r["ymc_transit"] - round(r["ymc_transit"])) > 1e-6]
+    if frac:
+        warnings.append(
+            f"У {len(frac)} позиций дробное количество «в пути» — штуки дробными не бывают. "
+            "Вероятно, в транзит попала колонка с измерением (вес/объём). Примеры: "
+            + ", ".join(f'{r["sku"]}={r["ymc_transit"]}' for r in frac[:5])
+        )
+    diag = {
+        "unknown_columns": unknown_cols,
+        "warehouses_recognized": sorted(col_wh.keys()),
+        "transit_columns_count": len(transit_cols),
+        "total_kaspi_stock": tot_stock,
+        "total_transit": tot_transit,
+        "warnings": warnings,
+    }
+    return result, diag
 
 
 @router.post("/", summary="Загрузить снимок остатков (заменяет предыдущий целиком)")
@@ -149,7 +233,7 @@ async def upload_stock(
         with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
             tmp.write(content)
             tmp_path = tmp.name
-        parsed = parse_stock_excel(tmp_path)
+        parsed, diag = parse_stock_excel(tmp_path)
     except Exception as e:
         raise HTTPException(422, f"Ошибка разбора файла: {e}")
     finally:
@@ -184,6 +268,7 @@ async def upload_stock(
         "row_count": upload.row_count,
         "created_at": upload.created_at.isoformat(),
         "replaced_previous": len(old_uploads) > 0,
+        "diagnostics": diag,
     }
 
 
