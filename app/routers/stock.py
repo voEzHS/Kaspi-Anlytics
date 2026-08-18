@@ -9,7 +9,6 @@
 (товарная характеристика, объём/литраж), не читаем их вообще.
 """
 import os
-import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -64,15 +63,10 @@ _ORDERED_HINT = "ordered"
 # Транзит/пайплайн: китайские хабы YMC и статусы производства.
 _TRANSIT_HINTS = (
     "gs-cai", "dlt-ylh", "gs-xx", "gs-xz", "sk-ylh",   # YMC-подсклады
+    "d-169946", "d-225604", "d-444508", "d-981812",    # прочие YMC-коды
     "left_factory", "出厂", "ordered", "已订购",
     "ymc",
 )
-
-# YMC-подсклады с числовыми кодами вида «D-169946». Шаблоном, а не списком:
-# 17.08.2026 в CRM появились сразу пять новых (D-119121, D-502164, D-738411,
-# D-924615, D-987701) — перечисление пришлось бы дописывать каждый раз, и до
-# этого момента товар на новых складах был бы не виден.
-_TRANSIT_CODE_RE = re.compile(r"^[a-z]-\d{4,}$")
 
 # Прочие склады Казахстана — реальный товар, но Kaspi их не видит.
 # Суммируются в ymc_transit как «есть, но не продаётся на Kaspi».
@@ -147,9 +141,7 @@ def parse_stock_excel(filepath: str) -> tuple[list[dict], dict]:
             col_ordered = idx
         elif any(k in n for k in _EXCLUDE_HINTS):
             continue  # характеристика товара — не сток, никуда не суммируем
-        elif (any(k in n for k in _TRANSIT_HINTS)
-              or any(k in n for k in _OTHER_WH_HINTS)
-              or _TRANSIT_CODE_RE.match(n)):
+        elif any(k in n for k in _TRANSIT_HINTS) or any(k in n for k in _OTHER_WH_HINTS):
             transit_cols.append(idx)          # опознанный транзит / прочий склад
         else:
             unknown_cols.append(str(h).strip())  # НЕ суммируем — только сообщаем
